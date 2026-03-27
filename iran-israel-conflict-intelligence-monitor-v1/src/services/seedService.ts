@@ -211,4 +211,3 @@ export async function seedInitialData() {
     throw error;
   }
 }
-

@@ -1,33 +1,97 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
-  TrendingUp,
-  TrendingDown,
-  ShieldAlert,
-  Clock,
-  ChevronRight,
-  ArrowUpRight,
-  ExternalLink,
-  Zap,
-  Globe,
-  FileText,
   AlertTriangle,
-  Database,
-  RefreshCw,
+  ArrowUpRight,
   BarChart3,
+  Clock,
+  Database,
+  ExternalLink,
+  FileText,
+  Globe,
   Image as ImageIcon,
-  Map as MapIcon,
-  Layers,
-  Search,
+  RefreshCw,
+  ShieldAlert,
+  Zap,
 } from 'lucide-react';
-import { BreakingNews } from '../components/BreakingNews';
+import { Link } from 'react-router-dom';
+import { motion } from 'motion/react';
+
 import { Article, EventCluster, AIReport } from '../types';
 import { getArticles, getEventClusters, getAIReports } from '../services/firestoreService';
 import { ensureInitialContent, refreshSources } from '../services/ingestionService';
-import { Link } from 'react-router-dom';
-import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { SourceBadge } from '../components/SourceBadge';
+
+/**
+ * ---------------------------------------------------------
+ * Helpers
+ * ---------------------------------------------------------
+ */
+
+function isHttpUrl(value: unknown): value is string {
+  return typeof value === 'string' && /^https?:\/\//i.test(value.trim());
+}
+
+function isInternalUrl(url: string): boolean {
+  return /sentinel-intel\.io|localhost|127\.0\.0\.1/i.test(url);
+}
+
+function isLikelyRealArticleUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    if (!/^https?:$/.test(u.protocol)) return false;
+    if (!u.pathname || u.pathname === '/' || u.pathname.trim() === '') return false;
+    if (isInternalUrl(url)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isLiveExternalArticle(article: Article): boolean {
+  return (
+    (article.content_origin === 'live_rss' || article.content_origin === 'live_parsed') &&
+    isHttpUrl(article.url) &&
+    isLikelyRealArticleUrl(article.url)
+  );
+}
+
+function sortArticlesByPublishedDesc(items: Article[]): Article[] {
+  return [...items].sort((a, b) => {
+    const aMs = a?.published_at?.toDate?.()?.getTime?.() ?? 0;
+    const bMs = b?.published_at?.toDate?.()?.getTime?.() ?? 0;
+    return bMs - aMs;
+  });
+}
+
+function formatDateTime(ts: any) {
+  const d = ts?.toDate?.();
+  if (!d) return 'Unknown time';
+
+  return d.toLocaleString([], {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function formatTime(ts: any) {
+  const d = ts?.toDate?.();
+  if (!d) return '--:--';
+  return d.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/**
+ * ---------------------------------------------------------
+ * UI Atoms
+ * ---------------------------------------------------------
+ */
 
 const SectionHeader = ({
   icon: Icon,
@@ -46,7 +110,7 @@ const SectionHeader = ({
         <Icon className="h-4 w-4" />
       </div>
       <div>
-        <h2 className="text-base font-semibold tracking-tight">{title}</h2>
+        <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
         {subtitle && <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>}
       </div>
     </div>
@@ -54,139 +118,171 @@ const SectionHeader = ({
   </div>
 );
 
-const IntelligenceTicker = ({ articles }: { articles: Article[] }) => {
-  if (!articles.length) return null;
-
-  const tickerItems = articles.slice(0, 8);
-
-  return (
-    <div className="relative overflow-hidden rounded-xl border border-border bg-card/70">
-      <div className="flex items-center gap-3 border-b border-border/60 px-4 py-2">
-        <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">
-          <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-          Live ticker
-        </span>
-        <span className="text-[11px] text-muted-foreground">
-          Rolling headlines from the latest ingested reports
-        </span>
-      </div>
-
-      <div className="overflow-hidden whitespace-nowrap px-4 py-3">
-        <div className="flex animate-[marquee_55s_linear_infinite] gap-10">
-          {[...tickerItems, ...tickerItems].map((article, i) => (
-            <div key={`${article.id}-${i}`} className="flex items-center gap-3">
-              <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-              <span className="max-w-[420px] truncate text-xs font-medium text-foreground/90">
-                {article.title}
-              </span>
-              <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
-                {article.source_name}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <style>{`
-        @keyframes marquee {
-          0% { transform: translateX(0); }
-          100% { transform: translateX(-50%); }
-        }
-      `}</style>
-    </div>
-  );
-};
-
-const StrategicHeatmap = () => {
-  const regions = [
-    { name: 'Northern Border', risk: 85, trend: 'up', status: 'Critical' },
-    { name: 'Southern Sector', risk: 45, trend: 'stable', status: 'Monitored' },
-    { name: 'Eastern Front', risk: 92, trend: 'up', status: 'Active Conflict' },
-    { name: 'Maritime Zone', risk: 30, trend: 'down', status: 'Stable' },
-    { name: 'Cyber Infrastructure', risk: 78, trend: 'up', status: 'High Alert' },
-  ];
-
-  return (
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
-      {regions.map((region) => (
-        <div
-          key={region.name}
-          className="relative overflow-hidden rounded-xl border border-border bg-card/70 p-4"
-        >
-          <div className="mb-3 flex items-start justify-between gap-2">
-            <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-              {region.name}
-            </span>
-            {region.trend === 'up' && <TrendingUp className="h-3.5 w-3.5 text-primary" />}
-            {region.trend === 'down' && <TrendingDown className="h-3.5 w-3.5 text-green-500" />}
-          </div>
-
-          <div className="mb-2 flex items-end gap-2">
-            <span className="text-2xl font-semibold tracking-tight">{region.risk}%</span>
-            <span className="pb-0.5 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-              Risk
-            </span>
-          </div>
-
-          <p
-            className={cn(
-              'text-[11px] font-medium',
-              region.risk > 80 ? 'text-primary' : region.risk > 50 ? 'text-orange-500' : 'text-green-600'
-            )}
-          >
-            {region.status}
-          </p>
-
-          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
-            <div
-              className={cn(
-                'h-full rounded-full',
-                region.risk > 80 ? 'bg-primary' : region.risk > 50 ? 'bg-orange-500' : 'bg-green-500'
-              )}
-              style={{ width: `${region.risk}%` }}
-            />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-};
-
 const StatCard = ({
   icon: Icon,
   label,
   value,
-  color,
-  trend,
+  tone,
+  note,
 }: {
   icon: any;
   label: string;
   value: string | number;
-  color: string;
-  trend?: string;
+  tone: string;
+  note?: string;
 }) => (
-  <div className="rounded-xl border border-border bg-card/70 p-5 shadow-sm transition-colors hover:border-primary/20">
-    <div className="mb-4 flex items-start justify-between gap-3">
-      <div className={cn('flex h-10 w-10 items-center justify-center rounded-xl', color)}>
-        <Icon className="h-5 w-5" />
+  <div className="rounded-xl border border-border bg-card/70 p-4 shadow-sm">
+    <div className="mb-3 flex items-start justify-between gap-3">
+      <div className={cn('flex h-9 w-9 items-center justify-center rounded-lg', tone)}>
+        <Icon className="h-4 w-4" />
       </div>
-      {trend && (
-        <span className="rounded-full border border-border bg-background px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-          {trend}
+      {note && (
+        <span className="rounded-full border border-border bg-background px-2.5 py-1 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+          {note}
         </span>
       )}
     </div>
-    <div>
-      <p className="mb-1 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-        {label}
-      </p>
-      <p className="text-2xl font-semibold tracking-tight">{value}</p>
+
+    <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+      {label}
+    </p>
+    <p className="text-2xl font-semibold tracking-tight">{value}</p>
+  </div>
+);
+
+const FeaturedLead = ({ article }: { article: Article }) => (
+  <a
+    href={article.url}
+    target="_blank"
+    rel="noopener noreferrer"
+    className="group relative overflow-hidden rounded-2xl border border-border bg-card shadow-sm"
+  >
+    <div className="relative aspect-[16/9] bg-muted">
+      {article.image_url ? (
+        <img
+          src={article.image_url}
+          alt={article.title}
+          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+          referrerPolicy="no-referrer"
+        />
+      ) : (
+        <div className="flex h-full items-center justify-center bg-muted/40 text-muted-foreground">
+          <ImageIcon className="h-10 w-10 opacity-40" />
+        </div>
+      )}
+
+      <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
+
+      <div className="absolute inset-x-0 bottom-0 p-5">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <SourceBadge origin={article.content_origin} isVerified={article.is_verified} />
+          <span className="text-[10px] uppercase tracking-[0.14em] text-white/75">
+            {article.source_name}
+          </span>
+          <span className="text-[10px] text-white/50">•</span>
+          <span className="text-[10px] text-white/70">{formatDateTime(article.published_at)}</span>
+        </div>
+
+        <h3 className="max-w-3xl text-xl font-semibold leading-tight tracking-tight text-white md:text-2xl">
+          {article.title}
+        </h3>
+
+        <p className="mt-2 max-w-2xl line-clamp-2 text-sm leading-6 text-white/75">
+          {article.summary || article.content}
+        </p>
+      </div>
     </div>
+  </a>
+);
+
+const NewsCard = ({ article }: { article: Article }) => (
+  <article className="overflow-hidden rounded-xl border border-border bg-card/70 shadow-sm transition hover:border-primary/20">
+    <a href={article.url} target="_blank" rel="noopener noreferrer" className="block">
+      <div className="aspect-[16/10] bg-muted">
+        {article.image_url ? (
+          <img
+            src={article.image_url}
+            alt={article.title}
+            className="h-full w-full object-cover"
+            referrerPolicy="no-referrer"
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center bg-muted/30 text-muted-foreground">
+            <ImageIcon className="h-8 w-8 opacity-40" />
+          </div>
+        )}
+      </div>
+    </a>
+
+    <div className="space-y-3 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <SourceBadge origin={article.content_origin} isVerified={article.is_verified} />
+          <span className="truncate text-[10px] uppercase tracking-[0.12em] text-primary">
+            {article.source_name}
+          </span>
+        </div>
+
+        <span className="shrink-0 text-[10px] text-muted-foreground">
+          {formatTime(article.published_at)}
+        </span>
+      </div>
+
+      <a href={article.url} target="_blank" rel="noopener noreferrer" className="block">
+        <h3 className="line-clamp-2 text-sm font-semibold leading-6 tracking-tight hover:text-primary">
+          {article.title}
+        </h3>
+      </a>
+
+      <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">
+        {article.summary || article.content}
+      </p>
+
+      <div className="flex items-center justify-between pt-1 text-[11px] text-muted-foreground">
+        <span>{formatDateTime(article.published_at)}</span>
+        <a
+          href={article.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 hover:text-primary"
+        >
+          Source
+          <ExternalLink className="h-3 w-3" />
+        </a>
+      </div>
+    </div>
+  </article>
+);
+
+const FeedRow = ({ article }: { article: Article }) => (
+  <div className="rounded-xl border border-border bg-card/70 p-4 shadow-sm">
+    <div className="mb-2 flex items-center justify-between gap-3">
+      <div className="flex min-w-0 items-center gap-2">
+        <SourceBadge origin={article.content_origin} isVerified={article.is_verified} />
+        <span className="truncate text-[10px] uppercase tracking-[0.12em] text-primary">
+          {article.source_name}
+        </span>
+      </div>
+
+      <span className="shrink-0 text-[10px] text-muted-foreground">
+        {formatDateTime(article.published_at)}
+      </span>
+    </div>
+
+    <a href={article.url} target="_blank" rel="noopener noreferrer" className="block">
+      <h4 className="mb-2 line-clamp-2 text-sm font-semibold leading-6 tracking-tight hover:text-primary">
+        {article.title}
+      </h4>
+    </a>
+
+    <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">
+      {article.summary || article.content}
+    </p>
   </div>
 );
 
 const EventClusterCard = ({ cluster }: { cluster: EventCluster }) => (
-  <div className="group rounded-xl border border-border bg-card/70 p-5 shadow-sm transition-all hover:border-primary/25 hover:shadow-md">
+  <div className="rounded-xl border border-border bg-card/70 p-4 shadow-sm transition hover:border-primary/20">
     <div className="mb-3 flex items-start justify-between gap-3">
       <div className="flex items-center gap-2">
         <div
@@ -195,148 +291,64 @@ const EventClusterCard = ({ cluster }: { cluster: EventCluster }) => (
             cluster.impact_level >= 4 ? 'bg-destructive' : 'bg-orange-500'
           )}
         />
-        <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+        <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
           Impact {cluster.impact_level}
         </span>
       </div>
 
       <Link
         to={`/cluster/${cluster.id}`}
-        className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+        className="rounded-full p-1 text-muted-foreground transition hover:bg-primary/10 hover:text-primary"
       >
         <ArrowUpRight className="h-4 w-4" />
       </Link>
     </div>
 
-    <h3 className="mb-2 text-base font-semibold tracking-tight transition-colors group-hover:text-primary">
-      {cluster.title}
-    </h3>
+    <h3 className="mb-2 text-sm font-semibold tracking-tight">{cluster.title}</h3>
+    <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">{cluster.description}</p>
 
-    <p className="mb-4 line-clamp-2 text-sm leading-6 text-muted-foreground">
-      {cluster.description}
-    </p>
-
-    <div className="flex items-center justify-between border-t border-border/60 pt-3 text-[11px] text-muted-foreground">
+    <div className="mt-4 flex items-center justify-between border-t border-border/60 pt-3 text-[10px] text-muted-foreground">
       <span className="inline-flex items-center gap-1.5">
         <FileText className="h-3.5 w-3.5" />
-        {cluster.article_ids.length} reports
+        {cluster.article_ids?.length || 0} linked
       </span>
       <span className="inline-flex items-center gap-1.5">
         <Clock className="h-3.5 w-3.5" />
-        {cluster.start_date.toDate().toLocaleDateString()}
+        {cluster.start_date?.toDate?.()?.toLocaleDateString?.() || 'Unknown'}
       </span>
     </div>
   </div>
 );
 
-const IntelligenceGallery = ({ articles }: { articles: Article[] }) => {
-  const imageArticles = articles.filter((a) => a.image_url).slice(0, 6);
-
-  if (!imageArticles.length) return null;
-
-  return (
-    <section className="space-y-5">
-      <SectionHeader
-        icon={ImageIcon}
-        title="Visual intelligence"
-        subtitle="Image-backed reports from ingested sources"
-      />
-
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-        {imageArticles.map((article, idx) => (
-          <motion.a
-            key={article.id}
-            href={article.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.05 }}
-            className="group relative aspect-[16/10] overflow-hidden rounded-xl border border-border bg-card"
-          >
-            <img
-              src={article.image_url}
-              alt={article.title}
-              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
-              referrerPolicy="no-referrer"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
-            <div className="absolute inset-x-0 bottom-0 p-4">
-              <div className="mb-2 flex items-center gap-2">
-                <SourceBadge origin={article.content_origin} isVerified={article.is_verified} />
-                <span className="text-[10px] text-white/70">{article.source_name}</span>
-              </div>
-              <h4 className="line-clamp-2 text-sm font-medium leading-5 text-white">
-                {article.title}
-              </h4>
-            </div>
-          </motion.a>
-        ))}
-      </div>
-    </section>
-  );
-};
-
-const StrategicMap = () => (
-  <section className="relative overflow-hidden rounded-2xl border border-border bg-card/70 p-6">
-    <div className="mb-5 flex items-center justify-between gap-4">
-      <div>
-        <h2 className="inline-flex items-center gap-2 text-base font-semibold tracking-tight">
-          <MapIcon className="h-4 w-4 text-primary" />
-          Regional strategic map
-        </h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Spatial monitoring placeholder for sector overlays and incident layers
-        </p>
-      </div>
-
-      <div className="flex gap-2">
-        <button className="rounded-lg border border-border bg-background p-2 text-muted-foreground transition-colors hover:text-foreground">
-          <Layers className="h-4 w-4" />
-        </button>
-        <button className="rounded-lg border border-border bg-background p-2 text-muted-foreground transition-colors hover:text-foreground">
-          <Search className="h-4 w-4" />
-        </button>
-      </div>
+const ReportCard = ({ report }: { report: AIReport }) => (
+  <div className="rounded-xl border border-border bg-card/70 p-4 shadow-sm">
+    <div className="mb-3 flex items-center justify-between gap-3">
+      <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] text-primary">
+        AI assessment
+      </span>
+      <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+        {report.status}
+      </span>
     </div>
 
-    <div className="relative aspect-[21/9] overflow-hidden rounded-xl border border-border bg-muted/30">
-      <div className="absolute inset-0 grid grid-cols-12 grid-rows-6 opacity-20">
-        {Array.from({ length: 72 }).map((_, i) => (
-          <div key={i} className="border-[0.5px] border-border/60" />
-        ))}
-      </div>
+    <h3 className="mb-2 text-sm font-semibold tracking-tight">{report.title}</h3>
+    <p className="line-clamp-3 text-xs leading-5 text-muted-foreground">{report.summary}</p>
 
-      <div className="relative flex h-full items-center justify-center">
-        <div className="space-y-3 text-center">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-primary/30 bg-primary/5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full border border-primary/40">
-              <div className="h-2 w-2 rounded-full bg-primary" />
-            </div>
-          </div>
-          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-            Sector monitoring active
-          </p>
-        </div>
-      </div>
-
-      <div className="absolute bottom-4 left-4 flex flex-wrap gap-4 text-[10px] text-muted-foreground">
-        <div className="inline-flex items-center gap-2">
-          <div className="h-2 w-2 rounded-full bg-destructive" />
-          High risk
-        </div>
-        <div className="inline-flex items-center gap-2">
-          <div className="h-2 w-2 rounded-full bg-orange-500" />
-          Active intel
-        </div>
-        <div className="inline-flex items-center gap-2">
-          <div className="h-2 w-2 rounded-full bg-blue-500" />
-          Safe zone
-        </div>
-      </div>
+    <div className="mt-4 flex items-center justify-between border-t border-border/60 pt-3 text-[10px] text-muted-foreground">
+      <span>Impact {report.impact_score}/10</span>
+      <Link to={`/reports/${report.id}`} className="inline-flex items-center gap-1 hover:text-primary">
+        Open
+        <ArrowUpRight className="h-3 w-3" />
+      </Link>
     </div>
-  </section>
+  </div>
 );
+
+/**
+ * ---------------------------------------------------------
+ * Dashboard
+ * ---------------------------------------------------------
+ */
 
 export const Dashboard = () => {
   const [articles, setArticles] = useState<Article[]>([]);
@@ -344,150 +356,240 @@ export const Dashboard = () => {
   const [reports, setReports] = useState<AIReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const isRefreshingRef = useRef(false);
 
   const fetchData = async (forceRefresh = false) => {
     try {
-      setLoading(true);
       setError(null);
 
-      if (forceRefresh) {
+      if (!forceRefresh) {
+        setLoading(true);
+      }
+
+      if (forceRefresh && !isRefreshingRef.current) {
+        isRefreshingRef.current = true;
         setRefreshing(true);
         await refreshSources();
         setRefreshing(false);
-      } else {
+        isRefreshingRef.current = false;
+      } else if (!forceRefresh) {
+        // still ensure content on first load
         await ensureInitialContent();
       }
 
       const [latestArticles, activeClusters, latestReports] = await Promise.all([
-        getArticles(12),
+        getArticles(60),
         getEventClusters('active'),
-        getAIReports(3),
+        getAIReports(6),
       ]);
 
-      const sortedArticles = [...latestArticles].sort((a, b) => {
-        if (a.content_origin === 'live_rss' && b.content_origin !== 'live_rss') return -1;
-        if (a.content_origin !== 'live_rss' && b.content_origin === 'live_rss') return 1;
-        return 0;
-      });
+      const liveExternal = sortArticlesByPublishedDesc(
+        latestArticles.filter(isLiveExternalArticle)
+      );
 
-      setArticles(sortedArticles);
+      setArticles(liveExternal);
       setClusters(activeClusters);
       setReports(latestReports);
+      setLastUpdated(new Date());
     } catch (err: any) {
       console.error('Dashboard data fetch error:', err);
-      setError(err.message || 'Failed to load intelligence data.');
+      setError(err?.message || 'Failed to load intelligence data.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
+      isRefreshingRef.current = false;
     }
   };
 
   useEffect(() => {
-    fetchData();
+    fetchData(true);
+
+    const interval = setInterval(() => {
+      fetchData(true);
+    }, 60_000);
+
+    return () => clearInterval(interval);
   }, []);
+
+  const featured = useMemo(() => articles[0], [articles]);
+  const gridArticles = useMemo(() => articles.slice(1, 9), [articles]);
+  const sidebarArticles = useMemo(() => articles.slice(0, 8), [articles]);
+  const imageArticles = useMemo(() => articles.filter((a) => !!a.image_url).slice(0, 6), [articles]);
 
   if (loading && articles.length === 0) {
     return (
       <div className="flex min-h-[50vh] flex-col items-center justify-center space-y-3">
         <RefreshCw className="h-10 w-10 animate-spin text-primary/40" />
-        <p className="text-sm text-muted-foreground">Synchronizing intelligence feed…</p>
+        <p className="text-sm text-muted-foreground">Collecting live external news…</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-8 pb-16">
-      <header className="relative overflow-hidden rounded-2xl border border-border bg-card/80 px-8 py-8 shadow-sm">
+      <header className="relative overflow-hidden rounded-2xl border border-border bg-card/80 px-6 py-6 shadow-sm md:px-8">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.06] via-transparent to-transparent" />
-        <div className="relative z-10 max-w-4xl">
-          <div className="mb-5 flex flex-wrap items-center gap-3">
+
+        <div className="relative z-10 max-w-5xl">
+          <div className="mb-4 flex flex-wrap items-center gap-3">
             <span className="rounded-full bg-primary/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">
-              Live strategic monitor
+              Live external monitor
             </span>
+
             <span className="inline-flex items-center gap-2 text-[11px] text-muted-foreground">
               <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-              Network active
+              Auto refresh every 60s
             </span>
+
+            {lastUpdated && (
+              <span className="text-[11px] text-muted-foreground">
+                Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
           </div>
 
-          <h1 className="mb-4 text-4xl font-semibold tracking-tight md:text-5xl">
-            Strategic situation report
+          <h1 className="mb-3 text-3xl font-semibold tracking-tight md:text-4xl">
+            Real-time conflict intelligence dashboard
           </h1>
 
-          <p className="mb-6 max-w-2xl text-sm leading-7 text-muted-foreground md:text-base">
-            Real-time multi-source monitoring of regional conflict developments, source activity,
-            event clusters, and AI-assisted assessments.
+          <p className="max-w-3xl text-sm leading-7 text-muted-foreground">
+            Live external news, source-linked reporting, event clusters, image-backed stories,
+            and AI-assisted assessments refreshed continuously from ingested feeds.
           </p>
 
-          <div className="flex flex-wrap gap-3">
+          <div className="mt-5 flex flex-wrap gap-3">
             <button
               onClick={() => fetchData(true)}
               disabled={refreshing}
               className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
             >
               <RefreshCw className={cn('h-4 w-4', refreshing ? 'animate-spin' : '')} />
-              {refreshing ? 'Refreshing' : 'Refresh intelligence'}
+              {refreshing ? 'Refreshing' : 'Refresh now'}
             </button>
 
             <Link
-              to="/reports"
+              to="/feed"
               className="rounded-xl border border-border bg-background px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-foreground transition hover:bg-muted"
             >
-              Open assessments
+              Open full feed
             </Link>
           </div>
         </div>
       </header>
 
-      <IntelligenceTicker articles={articles} />
-
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          icon={Globe}
+          label="Live articles"
+          value={articles.length}
+          tone="bg-primary/10 text-primary"
+          note="External only"
+        />
         <StatCard
           icon={Activity}
           label="Active clusters"
           value={clusters.length}
-          color="bg-primary/10 text-primary"
-          trend="+2 new"
-        />
-        <StatCard
-          icon={TrendingUp}
-          label="Reports (24h)"
-          value={articles.length}
-          color="bg-blue-500/10 text-blue-600"
-          trend="+15%"
+          tone="bg-blue-500/10 text-blue-600"
         />
         <StatCard
           icon={BarChart3}
-          label="Strategic risk"
-          value="Elevated"
-          color="bg-orange-500/10 text-orange-600"
+          label="AI reports"
+          value={reports.length}
+          tone="bg-orange-500/10 text-orange-600"
         />
         <StatCard
           icon={ShieldAlert}
-          label="Threat level"
-          value="Level 4"
-          color="bg-destructive/10 text-destructive"
+          label="Watch status"
+          value={articles.length > 0 ? 'Active' : 'Limited'}
+          tone="bg-destructive/10 text-destructive"
         />
       </div>
 
+      {featured ? (
+        <section className="space-y-5">
+          <SectionHeader
+            icon={Zap}
+            title="Top live development"
+            subtitle="Most recent live external article"
+          />
+          <FeaturedLead article={featured} />
+        </section>
+      ) : (
+        <div className="rounded-xl border border-dashed border-border bg-muted/20 py-12 text-center">
+          <AlertTriangle className="mx-auto mb-3 h-8 w-8 text-muted-foreground/40" />
+          <p className="text-sm text-muted-foreground">
+            No valid live external articles found yet. Refresh again after feeds update.
+          </p>
+        </div>
+      )}
+
+      {imageArticles.length > 0 && (
+        <section className="space-y-5">
+          <SectionHeader
+            icon={ImageIcon}
+            title="Images & visual coverage"
+            subtitle="Image-backed stories from live external feeds"
+          />
+
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+            {imageArticles.map((article, idx) => (
+              <motion.a
+                key={article.id}
+                href={article.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.04 }}
+                className="group relative aspect-[16/10] overflow-hidden rounded-xl border border-border bg-card"
+              >
+                <img
+                  src={article.image_url}
+                  alt={article.title}
+                  className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                  referrerPolicy="no-referrer"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                <div className="absolute inset-x-0 bottom-0 p-4">
+                  <div className="mb-2 flex items-center gap-2">
+                    <SourceBadge origin={article.content_origin} isVerified={article.is_verified} />
+                    <span className="text-[10px] text-white/70">{article.source_name}</span>
+                  </div>
+                  <h4 className="line-clamp-2 text-sm font-medium leading-5 text-white">
+                    {article.title}
+                  </h4>
+                </div>
+              </motion.a>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="space-y-5">
         <SectionHeader
-          icon={Activity}
-          title="Regional risk heatmap"
-          subtitle="Current operational risk posture by monitored sector"
+          icon={FileText}
+          title="Latest live external news"
+          subtitle="Real publisher-linked items with timestamps and images where available"
         />
-        <StrategicHeatmap />
-      </section>
 
-      <StrategicMap />
-      <IntelligenceGallery articles={articles} />
+        {gridArticles.length > 0 ? (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {gridArticles.map((article) => (
+              <NewsCard key={article.id} article={article} />
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-border bg-muted/20 py-12 text-center">
+            <p className="text-sm text-muted-foreground">No live external articles to display yet.</p>
+          </div>
+        )}
+      </section>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
         <div className="space-y-8 lg:col-span-8">
-          <section>
-            <BreakingNews />
-          </section>
-
           <section className="space-y-5">
             <SectionHeader
               icon={Zap}
@@ -499,7 +601,7 @@ export const Dashboard = () => {
                   className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
                 >
                   View timeline
-                  <ChevronRight className="h-4 w-4" />
+                  <ArrowUpRight className="h-4 w-4" />
                 </Link>
               }
             />
@@ -519,43 +621,26 @@ export const Dashboard = () => {
           </section>
 
           {reports.length > 0 && (
-            <section className="overflow-hidden rounded-2xl border border-primary/15 bg-primary/[0.04] p-6">
+            <section className="space-y-5">
               <SectionHeader
-                icon={Zap}
-                title="AI strategic assessment"
-                subtitle="Latest synthesized reading from stored intelligence items"
+                icon={BarChart3}
+                title="AI strategic assessments"
+                subtitle="Synthesized summaries built from stored reports"
+                action={
+                  <Link
+                    to="/reports"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                  >
+                    All reports
+                    <ArrowUpRight className="h-4 w-4" />
+                  </Link>
+                }
               />
 
-              <div className="mt-5 rounded-xl border border-border bg-background p-5 shadow-sm">
-                <h3 className="mb-2 text-lg font-semibold tracking-tight">{reports[0].title}</h3>
-                <p className="mb-5 text-sm leading-7 text-muted-foreground">{reports[0].summary}</p>
-
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  <div className="flex items-center gap-6">
-                    <div>
-                      <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                        Impact score
-                      </p>
-                      <p className="text-lg font-semibold text-primary">
-                        {reports[0].impact_score}/10
-                      </p>
-                    </div>
-                    <div className="h-8 w-px bg-border" />
-                    <div>
-                      <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                        Status
-                      </p>
-                      <p className="text-lg font-semibold">{reports[0].status}</p>
-                    </div>
-                  </div>
-
-                  <Link
-                    to={`/reports/${reports[0].id}`}
-                    className="rounded-lg bg-zinc-900 px-4 py-2.5 text-xs font-medium uppercase tracking-[0.12em] text-white transition hover:bg-primary"
-                  >
-                    Full analysis
-                  </Link>
-                </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                {reports.slice(0, 4).map((report) => (
+                  <ReportCard key={report.id} report={report} />
+                ))}
               </div>
             </section>
           )}
@@ -565,58 +650,18 @@ export const Dashboard = () => {
           <section className="space-y-5">
             <SectionHeader
               icon={Clock}
-              title="Latest intel"
-              subtitle="Newest ingested reports and source-linked items"
-              action={
-                <Link to="/feed" className="text-xs font-medium text-primary hover:underline">
-                  All feed
-                </Link>
-              }
+              title="Latest feed"
+              subtitle="Newest live external items by time"
             />
 
             <div className="space-y-3">
-              {articles.length > 0 ? (
-                articles.slice(0, 8).map((article, idx) => (
-                  <motion.div
-                    key={article.id}
-                    initial={{ opacity: 0, x: 12 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: idx * 0.04 }}
-                    className="rounded-xl border border-border bg-card/70 p-4 transition hover:border-primary/20"
-                  >
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <SourceBadge origin={article.content_origin} isVerified={article.is_verified} />
-                        <span className="truncate text-[10px] font-medium uppercase tracking-[0.12em] text-primary">
-                          {article.source_name}
-                        </span>
-                      </div>
-                      <span className="shrink-0 text-[10px] text-muted-foreground">
-                        {article.published_at.toDate().toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </span>
-                    </div>
-
-                    <h4 className="mb-3 line-clamp-2 text-sm font-medium leading-6 tracking-tight">
-                      {article.title}
-                    </h4>
-
-                    <a
-                      href={article.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition hover:text-primary"
-                    >
-                      Original source
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
-                  </motion.div>
+              {sidebarArticles.length > 0 ? (
+                sidebarArticles.map((article) => (
+                  <FeedRow key={article.id} article={article} />
                 ))
               ) : (
                 <div className="rounded-xl border border-border bg-muted/20 py-10 text-center">
-                  <p className="text-sm text-muted-foreground">No recent intelligence available.</p>
+                  <p className="text-sm text-muted-foreground">No recent live feed available.</p>
                 </div>
               )}
             </div>
@@ -625,45 +670,48 @@ export const Dashboard = () => {
           <section className="rounded-2xl border border-border bg-zinc-950 p-5 text-white">
             <h3 className="mb-5 inline-flex items-center gap-2 text-sm font-semibold tracking-tight">
               <Database className="h-4 w-4 text-primary" />
-              Ingestion health
+              Ingestion status
             </h3>
 
             <div className="space-y-3">
               <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3">
                 <div className="flex items-center gap-3">
                   <div className="h-2 w-2 rounded-full bg-green-500" />
-                  <span className="text-xs">RSS feeds</span>
+                  <span className="text-xs">RSS ingestion</span>
                 </div>
-                <span className="text-[10px] uppercase tracking-[0.12em] text-white/60">Active</span>
+                <span className="text-[10px] uppercase tracking-[0.12em] text-white/60">
+                  Running
+                </span>
               </div>
 
               <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3">
                 <div className="flex items-center gap-3">
                   <div className="h-2 w-2 rounded-full bg-green-500" />
-                  <span className="text-xs">News API</span>
+                  <span className="text-xs">Auto refresh</span>
                 </div>
-                <span className="text-[10px] uppercase tracking-[0.12em] text-white/60">Active</span>
+                <span className="text-[10px] uppercase tracking-[0.12em] text-white/60">
+                  60 sec
+                </span>
               </div>
 
               <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3">
                 <div className="flex items-center gap-3">
                   <div className="h-2 w-2 rounded-full bg-orange-500" />
-                  <span className="text-xs">YouTube</span>
+                  <span className="text-xs">Optional APIs</span>
                 </div>
-                <span className="text-[10px] uppercase tracking-[0.12em] text-white/60">Limited</span>
+                <span className="text-[10px] uppercase tracking-[0.12em] text-white/60">
+                  Fallback
+                </span>
               </div>
             </div>
 
             <div className="mt-6 border-t border-white/10 pt-4">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-[10px] uppercase tracking-[0.14em] text-white/50">
-                  Database sync
-                </span>
-                <span className="text-[10px] text-green-400">99.9%</span>
-              </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
-                <div className="h-full w-[99.9%] bg-primary" />
-              </div>
+              <p className="mb-2 text-[10px] uppercase tracking-[0.14em] text-white/50">
+                Last refresh
+              </p>
+              <p className="text-xs text-white/80">
+                {lastUpdated ? formatDateTime({ toDate: () => lastUpdated }) : 'Not available'}
+              </p>
             </div>
           </section>
         </aside>

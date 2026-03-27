@@ -1,10 +1,12 @@
 import { Timestamp } from 'firebase/firestore';
-import { addArticle, getSources, getArticles } from './firestoreService';
+import { addArticle, getArticles, getSources } from './firestoreService';
 import { Article, Source } from '../types';
 import { ENV } from '../config/env';
 
 /**
- * ---------- Helpers ----------
+ * -----------------------------
+ * Helpers
+ * -----------------------------
  */
 
 function isHttpUrl(value: unknown): value is string {
@@ -21,12 +23,38 @@ function normalizeTitle(title: string): string {
 
 function parsePublishedAt(value: unknown): Timestamp {
   if (typeof value === 'string') {
-    const date = new Date(value);
-    if (!Number.isNaN(date.getTime())) {
-      return Timestamp.fromDate(date);
+    const d = new Date(value);
+    if (!Number.isNaN(d.getTime())) {
+      return Timestamp.fromDate(d);
     }
   }
   return Timestamp.now();
+}
+
+function isLikelyArticleUrl(articleUrl: string, sourceUrl?: string): boolean {
+  try {
+    const u = new URL(articleUrl);
+
+    if (!/^https?:$/.test(u.protocol)) return false;
+    if (!u.pathname || u.pathname === '/' || u.pathname.trim() === '') return false;
+
+    // Reject demo/internal/local URLs
+    if (/sentinel-intel\.io|localhost|127\.0\.0\.1/i.test(u.hostname)) {
+      return false;
+    }
+
+    // Reject cases where article URL is effectively same as source homepage/feed URL
+    if (sourceUrl && isHttpUrl(sourceUrl)) {
+      const s = new URL(sourceUrl);
+      if (u.hostname === s.hostname && u.pathname === s.pathname) {
+        return false;
+      }
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function extractImageUrl(item: any): string | undefined {
@@ -34,6 +62,7 @@ function extractImageUrl(item: any): string | undefined {
   if (item?.['media:content']?.$?.url && isHttpUrl(item['media:content'].$.url)) {
     return item['media:content'].$.url;
   }
+
   if (
     Array.isArray(item?.['media:content']) &&
     item['media:content'][0]?.$?.url &&
@@ -46,6 +75,7 @@ function extractImageUrl(item: any): string | undefined {
   if (item?.['media:thumbnail']?.$?.url && isHttpUrl(item['media:thumbnail'].$.url)) {
     return item['media:thumbnail'].$.url;
   }
+
   if (
     Array.isArray(item?.['media:thumbnail']) &&
     item['media:thumbnail'][0]?.$?.url &&
@@ -59,7 +89,7 @@ function extractImageUrl(item: any): string | undefined {
     return item.enclosure.url;
   }
 
-  // image inside content/description
+  // img tag inside content or description
   const contentToScan =
     item?.['content:encoded'] ||
     item?.content ||
@@ -68,9 +98,9 @@ function extractImageUrl(item: any): string | undefined {
     '';
 
   if (typeof contentToScan === 'string') {
-    const imgMatch = contentToScan.match(/<img[^>]+src=["']([^"'>]+)["']/i);
-    if (imgMatch?.[1] && isHttpUrl(imgMatch[1])) {
-      return imgMatch[1];
+    const match = contentToScan.match(/<img[^>]+src=["']([^"'>]+)["']/i);
+    if (match?.[1] && isHttpUrl(match[1])) {
+      return match[1];
     }
   }
 
@@ -95,16 +125,18 @@ function mapRssItemToArticle(
 ): Omit<Article, 'id' | 'ingested_at'> | null {
   const articleUrl = isHttpUrl(item?.link) ? item.link.trim() : '';
 
-  // Only keep real external article URLs
-  if (!articleUrl) {
+  // Only accept real external article links
+  if (!isLikelyArticleUrl(articleUrl, source.url)) {
     return null;
   }
 
-  const title = typeof item?.title === 'string' && item.title.trim()
-    ? item.title.trim()
-    : 'Untitled Report';
+  const title =
+    typeof item?.title === 'string' && item.title.trim()
+      ? item.title.trim()
+      : 'Untitled Report';
 
   const normalizedTitle = normalizeTitle(title);
+
   const summary =
     (typeof item?.contentSnippet === 'string' && item.contentSnippet.trim()) ||
     (typeof item?.description === 'string' && item.description.trim()) ||
@@ -143,25 +175,28 @@ function mapRssItemToArticle(
 }
 
 /**
- * Fetches articles from an RSS feed via the server proxy.
- * Only real items with real external URLs are accepted.
+ * -----------------------------
+ * RSS ingestion
+ * -----------------------------
  */
 async function fetchRSS(source: Source): Promise<Omit<Article, 'id' | 'ingested_at'>[]> {
   try {
     const response = await fetch(`/api/proxy/rss?url=${encodeURIComponent(source.url)}`);
 
     if (!response.ok) {
-      console.warn(`[Ingestion] Feed failed: ${source.name} (${source.url}). Skipping gracefully.`);
+      console.warn(`[Ingestion] Feed failed: ${source.name} (${source.url})`);
       return [];
     }
 
     const feed = await response.json();
 
-    const mapped = (feed?.items || [])
+    const rawItems = Array.isArray(feed?.items) ? feed.items : [];
+
+    const mapped = rawItems
       .map((item: any) => mapRssItemToArticle(source, item))
       .filter(Boolean) as Omit<Article, 'id' | 'ingested_at'>[];
 
-    // De-duplicate within this feed pull
+    // Deduplicate within same feed pull
     const seenFingerprints = new Set<string>();
     const seenUrls = new Set<string>();
 
@@ -177,48 +212,47 @@ async function fetchRSS(source: Source): Promise<Omit<Article, 'id' | 'ingested_
       return true;
     });
   } catch (error) {
-    console.warn(`[Ingestion] Error in fetchRSS for ${source.name}:`, error);
+    console.warn(`[Ingestion] Error fetching RSS for ${source.name}:`, error);
     return [];
   }
 }
 
 /**
- * News API ingestion is optional.
- * If the key is missing, do not fake results.
+ * -----------------------------
+ * Optional integrations
+ * -----------------------------
  */
 async function fetchNewsAPI(_source: Source): Promise<Omit<Article, 'id' | 'ingested_at'>[]> {
   if (!ENV.KEYS.NEWS || ENV.KEYS.NEWS === 'NOT_CONFIGURED') {
-    console.warn('[Ingestion] News API key missing. Skipping News API ingestion.');
+    console.warn('[Ingestion] NEWS_API_KEY missing. Skipping News API ingestion.');
     return [];
   }
 
-  // Real News API support can be added later.
+  // Real News API integration can be added later.
   return [];
 }
 
-/**
- * YouTube ingestion is optional.
- * If the key is missing, do not fake results.
- */
 async function fetchYouTube(_source: Source): Promise<Omit<Article, 'id' | 'ingested_at'>[]> {
   if (!ENV.KEYS.YOUTUBE || ENV.KEYS.YOUTUBE === 'NOT_CONFIGURED') {
-    console.warn('[Ingestion] YouTube API key missing. Skipping YouTube ingestion.');
+    console.warn('[Ingestion] YOUTUBE_API_KEY missing. Skipping YouTube ingestion.');
     return [];
   }
 
-  // Real YouTube support can be added later.
+  // Real YouTube integration can be added later.
   return [];
 }
 
 /**
- * Main ingestion loop.
- * De-duplicates inside the current refresh cycle before writing.
+ * -----------------------------
+ * Main refresh flow
+ * -----------------------------
  */
 export async function refreshSources() {
   try {
     const sources = await getSources(true);
     let totalIngested = 0;
 
+    // Prevent same-refresh duplicates before writing
     const seenFingerprints = new Set<string>();
     const seenUrls = new Set<string>();
 
@@ -257,29 +291,32 @@ export async function refreshSources() {
             console.error(`[Ingestion] Failed to store article from ${source.name}:`, writeError, article);
           }
         }
-      } catch (error) {
-        console.error(`[Ingestion] Failed to refresh source ${source.name}:`, error);
+      } catch (sourceError) {
+        console.error(`[Ingestion] Failed source refresh for ${source.name}:`, sourceError);
       }
     }
 
+    console.log(`[Ingestion] Completed refresh. Stored ${totalIngested} new articles.`);
     return totalIngested;
   } catch (error) {
-    console.error('[Ingestion] Failed to get sources for refresh:', error);
+    console.error('[Ingestion] Failed to load sources for refresh:', error);
     return 0;
   }
 }
 
 /**
- * Auto-ingestion on first load if empty.
+ * -----------------------------
+ * First-load content trigger
+ * -----------------------------
  */
 export async function ensureInitialContent() {
   try {
-    const articles = await getArticles(1);
-    if (articles.length === 0) {
-      console.log('[Ingestion] No articles found. Triggering initial ingestion...');
+    const existing = await getArticles(1);
+    if (existing.length === 0) {
+      console.log('[Ingestion] No articles found. Triggering initial live ingestion...');
       await refreshSources();
     }
   } catch (error) {
-    console.error('[Ingestion] Failed to check for initial content:', error);
+    console.error('[Ingestion] Failed initial content check:', error);
   }
 }

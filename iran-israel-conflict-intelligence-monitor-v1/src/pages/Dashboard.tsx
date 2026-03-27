@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Activity, 
-  TrendingUp, 
+import {
+  Activity,
+  TrendingUp,
   TrendingDown,
-  ShieldAlert, 
-  Clock, 
-  ChevronRight, 
+  ShieldAlert,
+  Clock,
+  ChevronRight,
   ArrowUpRight,
   ExternalLink,
   Zap,
@@ -18,7 +18,7 @@ import {
   Image as ImageIcon,
   Map as MapIcon,
   Layers,
-  Search
+  Search,
 } from 'lucide-react';
 import { BreakingNews } from '../components/BreakingNews';
 import { Article, EventCluster, AIReport } from '../types';
@@ -29,24 +29,64 @@ import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { SourceBadge } from '../components/SourceBadge';
 
-const IntelligenceTicker = ({ articles }: { articles: Article[] }) => {
-  return (
-    <div className="bg-zinc-950 border-y border-white/5 py-3 overflow-hidden whitespace-nowrap relative">
-      <div className="absolute left-0 top-0 bottom-0 w-32 bg-gradient-to-r from-zinc-950 to-transparent z-10" />
-      <div className="absolute right-0 top-0 bottom-0 w-32 bg-gradient-to-l from-zinc-950 to-transparent z-10" />
-      <div className="flex animate-[marquee_60s_linear_infinite] gap-12 items-center">
-        {articles.map((article, i) => (
-          <div key={i} className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 bg-primary rounded-full animate-pulse" />
-              <span className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">FLASH</span>
-            </div>
-            <span className="text-xs font-black text-white/80 tracking-tight uppercase">{article.title}</span>
-            <span className="text-white/10 font-black tracking-widest">[{article.source_name}]</span>
-            <span className="text-white/20">/ / /</span>
-          </div>
-        ))}
+const SectionHeader = ({
+  icon: Icon,
+  title,
+  subtitle,
+  action,
+}: {
+  icon: any;
+  title: string;
+  subtitle?: string;
+  action?: React.ReactNode;
+}) => (
+  <div className="flex items-end justify-between gap-4 border-b border-border/60 pb-3">
+    <div className="flex items-start gap-3">
+      <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+        <Icon className="h-4 w-4" />
       </div>
+      <div>
+        <h2 className="text-base font-semibold tracking-tight">{title}</h2>
+        {subtitle && <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>}
+      </div>
+    </div>
+    {action}
+  </div>
+);
+
+const IntelligenceTicker = ({ articles }: { articles: Article[] }) => {
+  if (!articles.length) return null;
+
+  const tickerItems = articles.slice(0, 8);
+
+  return (
+    <div className="relative overflow-hidden rounded-xl border border-border bg-card/70">
+      <div className="flex items-center gap-3 border-b border-border/60 px-4 py-2">
+        <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">
+          <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+          Live ticker
+        </span>
+        <span className="text-[11px] text-muted-foreground">
+          Rolling headlines from the latest ingested reports
+        </span>
+      </div>
+
+      <div className="overflow-hidden whitespace-nowrap px-4 py-3">
+        <div className="flex animate-[marquee_55s_linear_infinite] gap-10">
+          {[...tickerItems, ...tickerItems].map((article, i) => (
+            <div key={`${article.id}-${i}`} className="flex items-center gap-3">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+              <span className="max-w-[420px] truncate text-xs font-medium text-foreground/90">
+                {article.title}
+              </span>
+              <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                {article.source_name}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <style>{`
         @keyframes marquee {
           0% { transform: translateX(0); }
@@ -67,136 +107,170 @@ const StrategicHeatmap = () => {
   ];
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
       {regions.map((region) => (
-        <div key={region.name} className="bg-zinc-900/40 border border-white/5 p-5 rounded-2xl relative overflow-hidden group">
-          <div className="absolute top-0 left-0 w-full h-1 bg-white/5" />
-          <div 
+        <div
+          key={region.name}
+          className="relative overflow-hidden rounded-xl border border-border bg-card/70 p-4"
+        >
+          <div className="mb-3 flex items-start justify-between gap-2">
+            <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              {region.name}
+            </span>
+            {region.trend === 'up' && <TrendingUp className="h-3.5 w-3.5 text-primary" />}
+            {region.trend === 'down' && <TrendingDown className="h-3.5 w-3.5 text-green-500" />}
+          </div>
+
+          <div className="mb-2 flex items-end gap-2">
+            <span className="text-2xl font-semibold tracking-tight">{region.risk}%</span>
+            <span className="pb-0.5 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+              Risk
+            </span>
+          </div>
+
+          <p
             className={cn(
-              "absolute top-0 left-0 h-1 transition-all duration-1000",
-              region.risk > 80 ? "bg-primary shadow-[0_0_10px_rgba(239,68,68,0.5)]" : region.risk > 50 ? "bg-orange-500" : "bg-green-500"
+              'text-[11px] font-medium',
+              region.risk > 80 ? 'text-primary' : region.risk > 50 ? 'text-orange-500' : 'text-green-600'
             )}
-            style={{ width: `${region.risk}%` }}
-          />
-          
-          <div className="flex justify-between items-start mb-4">
-            <span className="text-[9px] font-black text-white/40 uppercase tracking-[0.2em]">{region.name}</span>
-            {region.trend === 'up' && <TrendingUp className="w-3.5 h-3.5 text-primary" />}
-            {region.trend === 'down' && <TrendingDown className="w-3.5 h-3.5 text-green-500" />}
-          </div>
-          <div className="flex items-baseline gap-2 mb-1">
-            <span className="text-2xl font-black tracking-tighter">{region.risk}%</span>
-            <span className="text-[8px] font-black text-white/20 uppercase tracking-widest">Risk</span>
-          </div>
-          <p className={cn(
-            "text-[9px] font-black uppercase tracking-widest",
-            region.risk > 80 ? "text-primary" : "text-white/40"
-          )}>
+          >
             {region.status}
           </p>
+
+          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
+            <div
+              className={cn(
+                'h-full rounded-full',
+                region.risk > 80 ? 'bg-primary' : region.risk > 50 ? 'bg-orange-500' : 'bg-green-500'
+              )}
+              style={{ width: `${region.risk}%` }}
+            />
+          </div>
         </div>
       ))}
     </div>
   );
 };
-const StatCard = ({ icon: Icon, label, value, color, trend }: { icon: any, label: string, value: string | number, color: string, trend?: string }) => (
-  <div className="bg-zinc-900/50 border border-white/5 rounded-3xl p-8 flex flex-col gap-6 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all group relative overflow-hidden backdrop-blur-sm">
-    <div className="scanline opacity-5" />
-    <div className="flex items-center justify-between relative z-10">
-      <div className={cn("p-4 rounded-2xl border border-white/10 shadow-lg", color)}>
-        <Icon className="w-6 h-6" />
+
+const StatCard = ({
+  icon: Icon,
+  label,
+  value,
+  color,
+  trend,
+}: {
+  icon: any;
+  label: string;
+  value: string | number;
+  color: string;
+  trend?: string;
+}) => (
+  <div className="rounded-xl border border-border bg-card/70 p-5 shadow-sm transition-colors hover:border-primary/20">
+    <div className="mb-4 flex items-start justify-between gap-3">
+      <div className={cn('flex h-10 w-10 items-center justify-center rounded-xl', color)}>
+        <Icon className="h-5 w-5" />
       </div>
       {trend && (
-        <span className={cn(
-          "text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest border",
-          trend.startsWith('+') ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-primary/10 text-primary border-primary/20'
-        )}>
+        <span className="rounded-full border border-border bg-background px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
           {trend}
         </span>
       )}
     </div>
-    <div className="relative z-10">
-      <p className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] mb-2">{label}</p>
-      <p className="text-4xl font-black tracking-tighter group-hover:text-primary transition-colors italic uppercase">{value}</p>
+    <div>
+      <p className="mb-1 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+        {label}
+      </p>
+      <p className="text-2xl font-semibold tracking-tight">{value}</p>
     </div>
   </div>
 );
 
 const EventClusterCard = ({ cluster }: { cluster: EventCluster }) => (
-  <div className="bg-card border rounded-2xl p-6 hover:border-primary/50 transition-all group relative overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1 duration-300">
-    <div className="absolute top-0 left-0 w-1.5 h-full bg-primary/20 group-hover:bg-primary transition-colors" />
-    <div className="flex items-start justify-between mb-4">
-      <div className="flex items-center gap-2.5">
-        <div className={`w-2.5 h-2.5 rounded-full ${cluster.impact_level >= 4 ? 'bg-destructive animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.5)]' : 'bg-orange-500'}`} />
-        <span className="text-[11px] font-black uppercase tracking-[0.2em] text-muted-foreground">
-          Impact Level {cluster.impact_level}
+  <div className="group rounded-xl border border-border bg-card/70 p-5 shadow-sm transition-all hover:border-primary/25 hover:shadow-md">
+    <div className="mb-3 flex items-start justify-between gap-3">
+      <div className="flex items-center gap-2">
+        <div
+          className={cn(
+            'h-2.5 w-2.5 rounded-full',
+            cluster.impact_level >= 4 ? 'bg-destructive' : 'bg-orange-500'
+          )}
+        />
+        <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+          Impact {cluster.impact_level}
         </span>
       </div>
-      <Link to={`/cluster/${cluster.id}`} className="text-muted-foreground hover:text-primary p-1 rounded-full hover:bg-primary/10 transition-colors">
-        <ArrowUpRight className="w-5 h-5" />
+
+      <Link
+        to={`/cluster/${cluster.id}`}
+        className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+      >
+        <ArrowUpRight className="h-4 w-4" />
       </Link>
     </div>
-    <h3 className="text-lg font-black tracking-tighter mb-3 group-hover:text-primary transition-colors line-clamp-2 leading-tight">
+
+    <h3 className="mb-2 text-base font-semibold tracking-tight transition-colors group-hover:text-primary">
       {cluster.title}
     </h3>
-    <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed mb-6 font-medium">
+
+    <p className="mb-4 line-clamp-2 text-sm leading-6 text-muted-foreground">
       {cluster.description}
     </p>
-    <div className="flex items-center justify-between text-[10px] text-muted-foreground font-black uppercase tracking-[0.15em] pt-4 border-t border-dashed">
-      <span className="flex items-center gap-1.5">
-        <FileText className="w-3.5 h-3.5" /> {cluster.article_ids.length} Intel Reports
+
+    <div className="flex items-center justify-between border-t border-border/60 pt-3 text-[11px] text-muted-foreground">
+      <span className="inline-flex items-center gap-1.5">
+        <FileText className="h-3.5 w-3.5" />
+        {cluster.article_ids.length} reports
       </span>
-      <span className="flex items-center gap-1.5">
-        <Clock className="w-3.5 h-3.5" /> {cluster.start_date.toDate().toLocaleDateString()}
+      <span className="inline-flex items-center gap-1.5">
+        <Clock className="h-3.5 w-3.5" />
+        {cluster.start_date.toDate().toLocaleDateString()}
       </span>
     </div>
   </div>
 );
 
 const IntelligenceGallery = ({ articles }: { articles: Article[] }) => {
-  const imageArticles = articles.filter(a => a.image_url).slice(0, 6);
-  
+  const imageArticles = articles.filter((a) => a.image_url).slice(0, 6);
+
+  if (!imageArticles.length) return null;
+
   return (
-    <section className="space-y-6">
-      <div className="flex items-center justify-between border-b border-white/5 pb-4">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
-            <ImageIcon className="w-4 h-4 text-primary" />
-          </div>
-          <h2 className="text-xl font-black tracking-tighter uppercase">Visual Intelligence</h2>
-        </div>
-        <span className="text-[9px] font-black text-white/40 uppercase tracking-[0.2em]">Geospatial Evidence Feed</span>
-      </div>
-      
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+    <section className="space-y-5">
+      <SectionHeader
+        icon={ImageIcon}
+        title="Visual intelligence"
+        subtitle="Image-backed reports from ingested sources"
+      />
+
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
         {imageArticles.map((article, idx) => (
-          <motion.div 
+          <motion.a
             key={article.id}
-            initial={{ opacity: 0, y: 20 }}
+            href={article.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.1 }}
-            className="relative aspect-[16/10] rounded-2xl overflow-hidden group cursor-pointer border border-white/5 bg-zinc-900"
+            transition={{ delay: idx * 0.05 }}
+            className="group relative aspect-[16/10] overflow-hidden rounded-xl border border-border bg-card"
           >
-            <img 
-              src={article.image_url} 
+            <img
+              src={article.image_url}
               alt={article.title}
-              className="w-full h-full object-cover transition-all duration-700 group-hover:scale-110 opacity-60 group-hover:opacity-100 grayscale group-hover:grayscale-0"
+              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
               referrerPolicy="no-referrer"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/20 to-transparent opacity-80 group-hover:opacity-100 transition-opacity duration-500 flex flex-col justify-end p-6">
-              <div className="flex items-center gap-2 mb-2">
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
+            <div className="absolute inset-x-0 bottom-0 p-4">
+              <div className="mb-2 flex items-center gap-2">
                 <SourceBadge origin={article.content_origin} isVerified={article.is_verified} />
-                <span className="text-[9px] font-black text-white/40 uppercase tracking-widest">{article.image_source || article.source_name}</span>
+                <span className="text-[10px] text-white/70">{article.source_name}</span>
               </div>
-              <h4 className="text-sm font-black text-white line-clamp-2 leading-tight tracking-tight group-hover:text-primary transition-colors">{article.title}</h4>
-              {article.image_caption && (
-                <p className="text-[8px] font-bold text-white/30 uppercase tracking-widest mt-2 line-clamp-1">{article.image_caption}</p>
-              )}
+              <h4 className="line-clamp-2 text-sm font-medium leading-5 text-white">
+                {article.title}
+              </h4>
             </div>
-            <div className="absolute top-4 right-4 p-2 bg-black/50 backdrop-blur-md rounded-xl opacity-0 group-hover:opacity-100 transition-all transform translate-y-2 group-hover:translate-y-0 border border-white/10">
-              <ExternalLink className="w-4 h-4 text-white" />
-            </div>
-          </motion.div>
+          </motion.a>
         ))}
       </div>
     </section>
@@ -204,61 +278,60 @@ const IntelligenceGallery = ({ articles }: { articles: Article[] }) => {
 };
 
 const StrategicMap = () => (
-  <section className="bg-zinc-950 rounded-3xl p-8 border border-white/10 relative overflow-hidden group">
-    <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]" />
-    <div className="absolute -right-20 -bottom-20 w-80 h-80 bg-primary/20 blur-[100px] rounded-full" />
-    
-    <div className="relative z-10">
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h2 className="text-2xl font-black tracking-tighter text-white uppercase flex items-center gap-3">
-            <MapIcon className="w-6 h-6 text-primary" />
-            Regional Strategic Map
-          </h2>
-          <p className="text-[10px] font-bold text-white/40 uppercase tracking-[0.2em] mt-1">Geospatial Intelligence Overlay v4.2</p>
-        </div>
-        <div className="flex gap-2">
-          <button className="p-2 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 transition-colors">
-            <Layers className="w-4 h-4 text-white" />
-          </button>
-          <button className="p-2 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 transition-colors">
-            <Search className="w-4 h-4 text-white" />
-          </button>
-        </div>
+  <section className="relative overflow-hidden rounded-2xl border border-border bg-card/70 p-6">
+    <div className="mb-5 flex items-center justify-between gap-4">
+      <div>
+        <h2 className="inline-flex items-center gap-2 text-base font-semibold tracking-tight">
+          <MapIcon className="h-4 w-4 text-primary" />
+          Regional strategic map
+        </h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Spatial monitoring placeholder for sector overlays and incident layers
+        </p>
       </div>
-      
-      <div className="aspect-[21/9] bg-zinc-900/50 rounded-2xl border border-white/5 flex items-center justify-center relative overflow-hidden">
-        {/* Mock Map Grid */}
-        <div className="absolute inset-0 grid grid-cols-12 grid-rows-6 opacity-10">
-          {Array.from({ length: 72 }).map((_, i) => (
-            <div key={i} className="border-[0.5px] border-white/20" />
-          ))}
-        </div>
-        
-        {/* Mock Map Content */}
-        <div className="text-center space-y-4 relative z-10">
-          <div className="w-20 h-20 border-2 border-primary/30 rounded-full flex items-center justify-center mx-auto animate-pulse">
-            <div className="w-12 h-12 border border-primary/50 rounded-full flex items-center justify-center">
-              <div className="w-2 h-2 bg-primary rounded-full" />
+
+      <div className="flex gap-2">
+        <button className="rounded-lg border border-border bg-background p-2 text-muted-foreground transition-colors hover:text-foreground">
+          <Layers className="h-4 w-4" />
+        </button>
+        <button className="rounded-lg border border-border bg-background p-2 text-muted-foreground transition-colors hover:text-foreground">
+          <Search className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+
+    <div className="relative aspect-[21/9] overflow-hidden rounded-xl border border-border bg-muted/30">
+      <div className="absolute inset-0 grid grid-cols-12 grid-rows-6 opacity-20">
+        {Array.from({ length: 72 }).map((_, i) => (
+          <div key={i} className="border-[0.5px] border-border/60" />
+        ))}
+      </div>
+
+      <div className="relative flex h-full items-center justify-center">
+        <div className="space-y-3 text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-primary/30 bg-primary/5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full border border-primary/40">
+              <div className="h-2 w-2 rounded-full bg-primary" />
             </div>
           </div>
-          <p className="text-[10px] font-black text-white/60 uppercase tracking-[0.3em]">Sector Monitoring Active</p>
+          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            Sector monitoring active
+          </p>
         </div>
-        
-        {/* Map Legend */}
-        <div className="absolute bottom-6 left-6 flex gap-6">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-destructive rounded-full" />
-            <span className="text-[9px] font-bold text-white/40 uppercase">High Risk</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-orange-500 rounded-full" />
-            <span className="text-[9px] font-bold text-white/40 uppercase">Active Intel</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-blue-500 rounded-full" />
-            <span className="text-[9px] font-bold text-white/40 uppercase">Safe Zone</span>
-          </div>
+      </div>
+
+      <div className="absolute bottom-4 left-4 flex flex-wrap gap-4 text-[10px] text-muted-foreground">
+        <div className="inline-flex items-center gap-2">
+          <div className="h-2 w-2 rounded-full bg-destructive" />
+          High risk
+        </div>
+        <div className="inline-flex items-center gap-2">
+          <div className="h-2 w-2 rounded-full bg-orange-500" />
+          Active intel
+        </div>
+        <div className="inline-flex items-center gap-2">
+          <div className="h-2 w-2 rounded-full bg-blue-500" />
+          Safe zone
         </div>
       </div>
     </div>
@@ -277,7 +350,7 @@ export const Dashboard = () => {
     try {
       setLoading(true);
       setError(null);
-      
+
       if (forceRefresh) {
         setRefreshing(true);
         await refreshSources();
@@ -289,10 +362,9 @@ export const Dashboard = () => {
       const [latestArticles, activeClusters, latestReports] = await Promise.all([
         getArticles(12),
         getEventClusters('active'),
-        getAIReports(3)
+        getAIReports(3),
       ]);
-      
-      // Prioritize live RSS items
+
       const sortedArticles = [...latestArticles].sort((a, b) => {
         if (a.content_origin === 'live_rss' && b.content_origin !== 'live_rss') return -1;
         if (a.content_origin !== 'live_rss' && b.content_origin === 'live_rss') return 1;
@@ -316,58 +388,52 @@ export const Dashboard = () => {
 
   if (loading && articles.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
-        <RefreshCw className="w-12 h-12 text-primary animate-spin opacity-20" />
-        <p className="text-muted-foreground font-medium animate-pulse uppercase tracking-widest text-xs">Synchronizing Intelligence Feed...</p>
+      <div className="flex min-h-[50vh] flex-col items-center justify-center space-y-3">
+        <RefreshCw className="h-10 w-10 animate-spin text-primary/40" />
+        <p className="text-sm text-muted-foreground">Synchronizing intelligence feed…</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-12 pb-20">
-      {/* Hero / Executive Summary Area */}
-      <header className="relative py-16 px-10 bg-zinc-950 text-white rounded-[2.5rem] overflow-hidden border border-white/5 shadow-[0_0_50px_rgba(0,0,0,0.5)] group">
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-transparent opacity-50" />
-        <div className="scanline opacity-10" />
-        <div className="absolute top-0 right-0 p-12 opacity-5 group-hover:opacity-10 transition-opacity duration-1000">
-          <Globe className="w-96 h-96" />
-        </div>
-        
+    <div className="space-y-8 pb-16">
+      <header className="relative overflow-hidden rounded-2xl border border-border bg-card/80 px-8 py-8 shadow-sm">
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.06] via-transparent to-transparent" />
         <div className="relative z-10 max-w-4xl">
-          <div className="flex items-center gap-4 mb-8">
-            <span className="px-4 py-1.5 bg-primary text-white text-[10px] font-black uppercase tracking-[0.3em] rounded-lg shadow-[0_0_15px_rgba(239,68,68,0.4)]">
-              LIVE STRATEGIC COMMAND
+          <div className="mb-5 flex flex-wrap items-center gap-3">
+            <span className="rounded-full bg-primary/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">
+              Live strategic monitor
             </span>
-            <div className="flex items-center gap-2 text-[10px] font-black text-white/40 uppercase tracking-[0.2em]">
-              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
-              <span>Network Active</span>
-            </div>
+            <span className="inline-flex items-center gap-2 text-[11px] text-muted-foreground">
+              <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+              Network active
+            </span>
           </div>
-          
-          <h1 className="text-7xl font-black tracking-tighter leading-[0.85] mb-8 uppercase italic">
-            Strategic <br />
-            <span className="text-primary not-italic">Situation Report</span>
+
+          <h1 className="mb-4 text-4xl font-semibold tracking-tight md:text-5xl">
+            Strategic situation report
           </h1>
-          
-          <p className="text-xl text-white/50 leading-relaxed font-medium mb-10 max-w-2xl">
-            Real-time multi-source intelligence aggregation. Monitoring regional conflicts, 
-            strategic movements, and geopolitical shifts with AI-driven synthesis.
+
+          <p className="mb-6 max-w-2xl text-sm leading-7 text-muted-foreground md:text-base">
+            Real-time multi-source monitoring of regional conflict developments, source activity,
+            event clusters, and AI-assisted assessments.
           </p>
 
-          <div className="flex flex-wrap gap-6">
-            <button 
+          <div className="flex flex-wrap gap-3">
+            <button
               onClick={() => fetchData(true)}
               disabled={refreshing}
-              className="px-8 py-4 bg-white text-black font-black uppercase tracking-[0.2em] text-[10px] rounded-2xl hover:bg-primary hover:text-white transition-all flex items-center gap-3 disabled:opacity-50 shadow-xl hover:shadow-primary/20"
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
             >
-              <RefreshCw className={cn("w-4 h-4", refreshing ? 'animate-spin' : '')} />
-              {refreshing ? 'Synchronizing...' : 'Refresh Intelligence'}
+              <RefreshCw className={cn('h-4 w-4', refreshing ? 'animate-spin' : '')} />
+              {refreshing ? 'Refreshing' : 'Refresh intelligence'}
             </button>
-            <Link 
+
+            <Link
               to="/reports"
-              className="px-8 py-4 bg-white/5 text-white font-black uppercase tracking-[0.2em] text-[10px] rounded-2xl hover:bg-white/10 transition-all border border-white/10 backdrop-blur-md"
+              className="rounded-xl border border-border bg-background px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-foreground transition hover:bg-muted"
             >
-              Access Assessments
+              Open assessments
             </Link>
           </div>
         </div>
@@ -375,233 +441,239 @@ export const Dashboard = () => {
 
       <IntelligenceTicker articles={articles} />
 
-      {/* Strategic Indicators */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard 
-          icon={Activity} 
-          label="Active Clusters" 
-          value={clusters.length} 
-          color="bg-primary/10 text-primary" 
-          trend="+2 New"
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          icon={Activity}
+          label="Active clusters"
+          value={clusters.length}
+          color="bg-primary/10 text-primary"
+          trend="+2 new"
         />
-        <StatCard 
-          icon={TrendingUp} 
-          label="Intel Volume (24h)" 
-          value={articles.length} 
-          color="bg-blue-500/10 text-blue-500" 
+        <StatCard
+          icon={TrendingUp}
+          label="Reports (24h)"
+          value={articles.length}
+          color="bg-blue-500/10 text-blue-600"
           trend="+15%"
         />
-        <StatCard 
-          icon={BarChart3} 
-          label="Strategic Risk" 
-          value="Elevated" 
-          color="bg-orange-500/10 text-orange-500" 
+        <StatCard
+          icon={BarChart3}
+          label="Strategic risk"
+          value="Elevated"
+          color="bg-orange-500/10 text-orange-600"
         />
-        <StatCard 
-          icon={ShieldAlert} 
-          label="Threat Level" 
-          value="Level 4" 
-          color="bg-destructive/10 text-destructive" 
+        <StatCard
+          icon={ShieldAlert}
+          label="Threat level"
+          value="Level 4"
+          color="bg-destructive/10 text-destructive"
         />
       </div>
 
-      {/* Strategic Heatmap Section */}
-      <div className="space-y-6">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
-            <Activity className="w-4 h-4 text-primary" />
-          </div>
-          <h2 className="text-xl font-black tracking-tighter uppercase">Regional Risk Heatmap</h2>
-        </div>
+      <section className="space-y-5">
+        <SectionHeader
+          icon={Activity}
+          title="Regional risk heatmap"
+          subtitle="Current operational risk posture by monitored sector"
+        />
         <StrategicHeatmap />
-      </div>
+      </section>
 
-      {/* Strategic Map Section */}
       <StrategicMap />
-
-      {/* Intelligence Gallery */}
       <IntelligenceGallery articles={articles} />
 
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
-        
-        {/* Left Column: Primary Intelligence */}
-        <div className="lg:col-span-8 space-y-12">
-          
-          {/* Breaking News Carousel */}
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
+        <div className="space-y-8 lg:col-span-8">
           <section>
             <BreakingNews />
           </section>
 
-          {/* Active Clusters Section */}
-          <section>
-            <div className="flex items-center justify-between mb-8 border-b pb-4">
-              <h2 className="text-2xl font-black tracking-tighter flex items-center gap-3 uppercase">
-                <Zap className="w-6 h-6 text-primary" />
-                Strategic Event Clusters
-              </h2>
-              <Link to="/timeline" className="text-[10px] font-black text-primary hover:underline flex items-center gap-1 uppercase tracking-widest">
-                Full Timeline <ChevronRight className="w-4 h-4" />
-              </Link>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <section className="space-y-5">
+            <SectionHeader
+              icon={Zap}
+              title="Strategic event clusters"
+              subtitle="Grouped operational themes and evolving developments"
+              action={
+                <Link
+                  to="/timeline"
+                  className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                >
+                  View timeline
+                  <ChevronRight className="h-4 w-4" />
+                </Link>
+              }
+            />
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {clusters.length > 0 ? (
-                clusters.map(cluster => (
-                  <EventClusterCard key={cluster.id} cluster={cluster} />
-                ))
+                clusters.map((cluster) => <EventClusterCard key={cluster.id} cluster={cluster} />)
               ) : (
-                <div className="col-span-2 py-20 text-center border-2 border-dashed rounded-3xl bg-muted/20">
-                  <AlertTriangle className="w-10 h-10 text-muted-foreground/30 mx-auto mb-4" />
-                  <p className="text-muted-foreground font-bold uppercase tracking-widest text-xs">No active clusters detected in current cycle.</p>
+                <div className="col-span-2 rounded-xl border border-dashed border-border bg-muted/20 py-12 text-center">
+                  <AlertTriangle className="mx-auto mb-3 h-8 w-8 text-muted-foreground/40" />
+                  <p className="text-sm text-muted-foreground">
+                    No active clusters detected in the current cycle.
+                  </p>
                 </div>
               )}
             </div>
           </section>
 
-          {/* AI Situation Summary Card */}
           {reports.length > 0 && (
-            <section className="bg-primary/5 border border-primary/10 rounded-3xl p-8 relative overflow-hidden">
-              <div className="absolute top-0 right-0 p-8 opacity-5">
-                <BarChart3 className="w-32 h-32" />
-              </div>
-              <div className="relative z-10">
-                <div className="flex items-center gap-2 mb-6">
-                  <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-                    <Zap className="w-4 h-4 text-white" />
-                  </div>
-                  <h2 className="text-xl font-black tracking-tight uppercase">AI Strategic Assessment</h2>
-                </div>
-                
-                <div className="space-y-6">
-                  <div className="p-6 bg-white border rounded-2xl shadow-sm">
-                    <h3 className="text-lg font-bold mb-3">{reports[0].title}</h3>
-                    <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-                      {reports[0].summary}
-                    </p>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="text-center">
-                          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Impact Score</p>
-                          <p className="text-lg font-black text-primary">{reports[0].impact_score}/10</p>
-                        </div>
-                        <div className="w-px h-8 bg-border" />
-                        <div className="text-center">
-                          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Status</p>
-                          <p className="text-lg font-black uppercase tracking-tighter">{reports[0].status}</p>
-                        </div>
-                      </div>
-                      <Link to={`/reports/${reports[0].id}`} className="px-4 py-2 bg-zinc-900 text-white text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-primary transition-colors">
-                        Full Analysis
-                      </Link>
+            <section className="overflow-hidden rounded-2xl border border-primary/15 bg-primary/[0.04] p-6">
+              <SectionHeader
+                icon={Zap}
+                title="AI strategic assessment"
+                subtitle="Latest synthesized reading from stored intelligence items"
+              />
+
+              <div className="mt-5 rounded-xl border border-border bg-background p-5 shadow-sm">
+                <h3 className="mb-2 text-lg font-semibold tracking-tight">{reports[0].title}</h3>
+                <p className="mb-5 text-sm leading-7 text-muted-foreground">{reports[0].summary}</p>
+
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex items-center gap-6">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                        Impact score
+                      </p>
+                      <p className="text-lg font-semibold text-primary">
+                        {reports[0].impact_score}/10
+                      </p>
+                    </div>
+                    <div className="h-8 w-px bg-border" />
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                        Status
+                      </p>
+                      <p className="text-lg font-semibold">{reports[0].status}</p>
                     </div>
                   </div>
+
+                  <Link
+                    to={`/reports/${reports[0].id}`}
+                    className="rounded-lg bg-zinc-900 px-4 py-2.5 text-xs font-medium uppercase tracking-[0.12em] text-white transition hover:bg-primary"
+                  >
+                    Full analysis
+                  </Link>
                 </div>
               </div>
             </section>
           )}
         </div>
 
-        {/* Right Column: Feed and Health */}
-        <aside className="lg:col-span-4 space-y-12">
-          
-          {/* Latest Intelligence Feed */}
-          <section>
-            <div className="flex items-center justify-between mb-8 border-b pb-4">
-              <h2 className="text-xl font-black tracking-tighter flex items-center gap-3 uppercase">
-                <Clock className="w-5 h-5 text-primary" />
-                Latest Intel
-              </h2>
-              <Link to="/feed" className="text-[10px] font-black text-muted-foreground hover:text-primary transition-colors uppercase tracking-widest">
-                All Feed
-              </Link>
-            </div>
-            
-            <div className="space-y-4">
+        <aside className="space-y-8 lg:col-span-4">
+          <section className="space-y-5">
+            <SectionHeader
+              icon={Clock}
+              title="Latest intel"
+              subtitle="Newest ingested reports and source-linked items"
+              action={
+                <Link to="/feed" className="text-xs font-medium text-primary hover:underline">
+                  All feed
+                </Link>
+              }
+            />
+
+            <div className="space-y-3">
               {articles.length > 0 ? (
                 articles.slice(0, 8).map((article, idx) => (
-                  <motion.div 
+                  <motion.div
                     key={article.id}
-                    initial={{ opacity: 0, x: 20 }}
+                    initial={{ opacity: 0, x: 12 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: idx * 0.05 }}
-                    className="bg-card border rounded-xl p-4 hover:border-primary/30 transition-all group"
+                    transition={{ delay: idx * 0.04 }}
+                    className="rounded-xl border border-border bg-card/70 p-4 transition hover:border-primary/20"
                   >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2">
                         <SourceBadge origin={article.content_origin} isVerified={article.is_verified} />
-                        <span className="text-[9px] font-black uppercase tracking-[0.15em] text-primary">
+                        <span className="truncate text-[10px] font-medium uppercase tracking-[0.12em] text-primary">
                           {article.source_name}
                         </span>
                       </div>
-                      <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
-                        {article.published_at.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      <span className="shrink-0 text-[10px] text-muted-foreground">
+                        {article.published_at.toDate().toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
                       </span>
                     </div>
-                    <h4 className="text-sm font-bold tracking-tight leading-snug mb-3 group-hover:text-primary transition-colors line-clamp-2">
+
+                    <h4 className="mb-3 line-clamp-2 text-sm font-medium leading-6 tracking-tight">
                       {article.title}
                     </h4>
-                    <a 
-                      href={article.url} 
-                      target="_blank" 
+
+                    <a
+                      href={article.url}
+                      target="_blank"
                       rel="noopener noreferrer"
-                      className="text-[9px] font-black text-muted-foreground hover:text-primary flex items-center gap-1 uppercase tracking-widest"
+                      className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition hover:text-primary"
                     >
-                      Source Link <ExternalLink className="w-2.5 h-2.5" />
+                      Original source
+                      <ExternalLink className="h-3 w-3" />
                     </a>
                   </motion.div>
                 ))
               ) : (
-                <div className="py-12 text-center border rounded-xl bg-muted/10">
-                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">No recent intelligence.</p>
+                <div className="rounded-xl border border-border bg-muted/20 py-10 text-center">
+                  <p className="text-sm text-muted-foreground">No recent intelligence available.</p>
                 </div>
               )}
             </div>
           </section>
 
-          {/* Source Health Panel */}
-          <section className="bg-zinc-900 text-white rounded-3xl p-6 border border-white/5">
-            <h3 className="text-sm font-black uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
-              <Database className="w-4 h-4 text-primary" />
-              Ingestion Health
+          <section className="rounded-2xl border border-border bg-zinc-950 p-5 text-white">
+            <h3 className="mb-5 inline-flex items-center gap-2 text-sm font-semibold tracking-tight">
+              <Database className="h-4 w-4 text-primary" />
+              Ingestion health
             </h3>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5">
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
-                  <span className="text-xs font-bold uppercase tracking-widest">RSS Feeds</span>
+                  <div className="h-2 w-2 rounded-full bg-green-500" />
+                  <span className="text-xs">RSS feeds</span>
                 </div>
-                <span className="text-[10px] font-bold text-white/40 uppercase">Active</span>
+                <span className="text-[10px] uppercase tracking-[0.12em] text-white/60">Active</span>
               </div>
-              <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5">
+
+              <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
-                  <span className="text-xs font-bold uppercase tracking-widest">News API</span>
+                  <div className="h-2 w-2 rounded-full bg-green-500" />
+                  <span className="text-xs">News API</span>
                 </div>
-                <span className="text-[10px] font-bold text-white/40 uppercase">Active</span>
+                <span className="text-[10px] uppercase tracking-[0.12em] text-white/60">Active</span>
               </div>
-              <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5">
+
+              <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-2 h-2 rounded-full bg-orange-500" />
-                  <span className="text-xs font-bold uppercase tracking-widest">YouTube</span>
+                  <div className="h-2 w-2 rounded-full bg-orange-500" />
+                  <span className="text-xs">YouTube</span>
                 </div>
-                <span className="text-[10px] font-bold text-white/40 uppercase">Limited</span>
+                <span className="text-[10px] uppercase tracking-[0.12em] text-white/60">Limited</span>
               </div>
             </div>
-            
-            <div className="mt-8 pt-6 border-t border-white/10">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Database Sync</span>
-                <span className="text-[10px] font-bold text-green-500 uppercase">99.9%</span>
+
+            <div className="mt-6 border-t border-white/10 pt-4">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-[10px] uppercase tracking-[0.14em] text-white/50">
+                  Database sync
+                </span>
+                <span className="text-[10px] text-green-400">99.9%</span>
               </div>
-              <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
-                <div className="w-[99.9%] h-full bg-primary" />
+              <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                <div className="h-full w-[99.9%] bg-primary" />
               </div>
             </div>
           </section>
-
         </aside>
       </div>
+
+      {error && (
+        <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
     </div>
   );
 };

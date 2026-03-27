@@ -1,0 +1,111 @@
+{
+  "entities": {
+    "Source": {
+      "title": "Source",
+      "description": "A news source or provider.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "url": { "type": "string" },
+        "type": { "type": "string", "enum": ["rss", "news_api", "youtube", "manual"] },
+        "is_active": { "type": "boolean" },
+        "last_refresh": { "type": "string", "format": "date-time" },
+        "refresh_frequency_minutes": { "type": "number" },
+        "category_id": { "type": "string" }
+      },
+      "required": ["name", "url", "type", "is_active"]
+    },
+    "Article": {
+      "title": "Article",
+      "description": "A collected news article or intelligence item.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "summary": { "type": "string" },
+        "url": { "type": "string" },
+        "source_name": { "type": "string" },
+        "source_type": { "type": "string", "enum": ["rss", "news_api", "youtube", "manual"] },
+        "published_at": { "type": "string", "format": "date-time" },
+        "ingested_at": { "type": "string", "format": "date-time" },
+        "category_id": { "type": "string" },
+        "tag_ids": { "type": "array", "items": { "type": "string" } },
+        "image_url": { "type": "string" },
+        "author": { "type": "string" },
+        "is_breaking": { "type": "boolean" },
+        "cluster_id": { "type": "string" }
+      },
+      "required": ["title", "content", "url", "source_name", "published_at", "ingested_at", "is_breaking"]
+    },
+    "EventCluster": {
+      "title": "EventCluster",
+      "description": "A group of related articles forming a single event.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "start_date": { "type": "string", "format": "date-time" },
+        "end_date": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["active", "resolved", "archived"] },
+        "article_ids": { "type": "array", "items": { "type": "string" } },
+        "category_id": { "type": "string" },
+        "impact_level": { "type": "number" }
+      },
+      "required": ["title", "description", "start_date", "status", "article_ids", "impact_level"]
+    },
+    "AIReport": {
+      "title": "AIReport",
+      "description": "An AI-generated intelligence report.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "summary": { "type": "string" },
+        "type": { "type": "string", "enum": ["daily", "weekly", "flash", "strategic"] },
+        "content": { "type": "string" },
+        "generated_at": { "type": "string", "format": "date-time" },
+        "source_article_ids": { "type": "array", "items": { "type": "string" } },
+        "cluster_ids": { "type": "array", "items": { "type": "string" } },
+        "impact_score": { "type": "number" },
+        "status": { "type": "string", "enum": ["draft", "published", "archived"] },
+        "is_verified": { "type": "boolean" },
+        "verified_by": { "type": "string" }
+      },
+      "required": ["title", "type", "content", "generated_at", "source_article_ids", "is_verified"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "A thematic category for intelligence items.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "icon": { "type": "string" },
+        "color": { "type": "string" }
+      },
+      "required": ["name", "description"]
+    },
+    "DiagnosticEvent": {
+      "title": "DiagnosticEvent",
+      "description": "A system diagnostic or error event.",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "service": { "type": "string" },
+        "operation": { "type": "string" },
+        "status": { "type": "string" },
+        "message": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "metadata": { "type": "object" }
+      },
+      "required": ["type", "timestamp", "message"]
+    }
+  },
+  "firestore": {
+    "sources": { "schema": "Source", "description": "Configured news sources." },
+    "articles": { "schema": "Article", "description": "Collected news articles." },
+    "event_clusters": { "schema": "EventCluster", "description": "Grouped events." },
+    "ai_reports": { "schema": "AIReport", "description": "Generated intelligence reports." },
+    "categories": { "schema": "Category", "description": "Thematic categories." },
+    "diagnostics": { "schema": "DiagnosticEvent", "description": "System health logs." }
+  }
+}

@@ -1,3 +1,7 @@
+import { useEffect, useState } from "react";
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth, signInWithGoogle } from "./firebase";
 import React, { useEffect, useState } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { onAuthStateChanged, User } from 'firebase/auth';
@@ -52,16 +56,30 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 const LoginPage = () => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!auth) return;
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        navigate("/", { replace: true });
+      }
+    });
+
+    return () => unsubscribe();
+  }, [navigate]);
 
   const handleLogin = async () => {
     setLoading(true);
     setError(null);
     try {
       await signInWithGoogle();
+      navigate("/", { replace: true });
     } catch (err: any) {
-      setError(err.message);
+      setError(err?.message || "Login failed");
     } finally {
       setLoading(false);
     }

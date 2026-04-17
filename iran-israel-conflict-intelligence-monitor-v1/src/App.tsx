@@ -17,11 +17,32 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const { data: { subscription } } = onAuthStateChange((user) => {
-      setUser(user);
-      setLoading(false);
-    });
-    return () => subscription?.unsubscribe();
+    let unsubscribe: (() => void) | undefined;
+    
+    const setup = async () => {
+      try {
+        // First check current session
+        const currentUser = await getCurrentUser();
+        setUser(currentUser);
+        setLoading(false);
+        
+        // Then listen for changes
+        const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+          setUser(session?.user ?? null);
+          setLoading(false);
+        });
+        unsubscribe = data?.subscription?.unsubscribe;
+      } catch (error) {
+        console.error("Auth setup error:", error);
+        setLoading(false);
+      }
+    };
+    
+    setup();
+    
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   if (loading) {
@@ -46,12 +67,18 @@ const LoginPage = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const { data: { subscription } } = onAuthStateChange((user) => {
-      if (user) {
+    let unsubscribe: (() => void) | undefined;
+    
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
         navigate("/", { replace: true });
       }
     });
-    return () => subscription?.unsubscribe();
+    unsubscribe = data?.subscription?.unsubscribe;
+    
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, [navigate]);
 
   const handleLogin = async () => {
@@ -59,7 +86,6 @@ const LoginPage = () => {
     setError(null);
     try {
       await signInWithGoogle();
-      // No need to navigate - the auth state change will redirect
     } catch (err: any) {
       setError(err?.message || "Login failed");
       setLoading(false);

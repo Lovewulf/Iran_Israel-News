@@ -2,18 +2,16 @@ import { createClient } from '@supabase/supabase-js';
 import axios from 'axios';
 import Parser from 'rss-parser';
 
-// ========== Supabase Client Setup ==========
+// ========== Configuration ==========
+const MIN_DATE = new Date('2026-03-01T00:00:00Z'); // March 1, 2026 UTC
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!supabaseUrl || !supabaseServiceKey) {
-  throw new Error('Missing Supabase environment variables. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
+  throw new Error('Missing Supabase environment variables');
 }
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// ========== Configuration ==========
-const MAX_ARTICLE_AGE_HOURS = parseInt(process.env.MAX_ARTICLE_AGE_HOURS || '48', 10);
-
-// ========== User-Agent Rotation (avoid blocking) ==========
+// ========== User-Agent Rotation ==========
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -23,13 +21,12 @@ const USER_AGENTS = [
 ];
 const getRandomUserAgent = () => USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 
-// ========== RSS Parser ==========
 const parser = new Parser({
   timeout: 15000,
   headers: { 'User-Agent': getRandomUserAgent() },
 });
 
-// ========== Helper: Fetch RSS with retries ==========
+// ========== Helper: Fetch with retries ==========
 async function fetchFeedWithRetry(url: string, maxRetries = 2): Promise<any> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -67,22 +64,20 @@ async function extractImageUrl(item: any, link: string): Promise<string> {
   return '';
 }
 
-// ========== Helper: Check if article is recent ==========
-function isRecentArticle(pubDate: string | Date | undefined, maxAgeHours: number): boolean {
+// ========== Helper: Check if article is on or after March 1, 2026 ==========
+function isOnOrAfterMinDate(pubDate: string | Date | undefined): boolean {
   if (!pubDate) return false;
   try {
     const articleDate = new Date(pubDate);
     if (isNaN(articleDate.getTime())) return false;
-    const now = new Date();
-    const diffHours = (now.getTime() - articleDate.getTime()) / (1000 * 60 * 60);
-    return diffHours <= maxAgeHours;
+    return articleDate >= MIN_DATE;
   } catch {
     return false;
   }
 }
 
-// ========== Helper: Process a single feed ==========
-async function processFeed(sourceName: string, feedUrl: string, maxItems = 8): Promise<number> {
+// ========== Process a single feed ==========
+async function processFeed(sourceName: string, feedUrl: string, maxItems = 10): Promise<number> {
   let addedCount = 0;
   try {
     console.log(`🔍 Processing ${sourceName} from: ${feedUrl}`);
@@ -95,10 +90,10 @@ async function processFeed(sourceName: string, feedUrl: string, maxItems = 8): P
     for (const item of items) {
       if (!item.link) continue;
 
-      // Date filter: skip articles older than MAX_ARTICLE_AGE_HOURS
+      // Date filter: skip articles published BEFORE March 1, 2026
       const pubDate = item.isoDate || item.pubDate;
-      if (!isRecentArticle(pubDate, MAX_ARTICLE_AGE_HOURS)) {
-        console.log(`⏭️ Skipping old article: ${item.title?.substring(0, 50)} (${pubDate})`);
+      if (!isOnOrAfterMinDate(pubDate)) {
+        console.log(`⏭️ Skipping article older than March 1, 2026: ${item.title?.substring(0, 50)} (${pubDate})`);
         continue;
       }
 
@@ -110,6 +105,7 @@ async function processFeed(sourceName: string, feedUrl: string, maxItems = 8): P
       const title = item.title?.trim() || 'No title';
       const content = item.content || item.contentSnippet || '';
       const summary = item.contentSnippet || content.slice(0, 300);
+      // Preserve original publication timestamp as UTC ISO string
       const publishedAt = pubDate ? new Date(pubDate).toISOString() : new Date().toISOString();
       const now = new Date().toISOString();
       const fingerprint = Buffer.from(`${item.link}${title}`).toString('base64');
@@ -139,7 +135,7 @@ async function processFeed(sourceName: string, feedUrl: string, maxItems = 8): P
         continue;
       }
       addedCount++;
-      console.log(`✅ [${sourceName}] Added: ${title.substring(0, 70)}...`);
+      console.log(`✅ [${sourceName}] Added: ${title.substring(0, 70)}... (published ${publishedAt})`);
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
@@ -150,94 +146,58 @@ async function processFeed(sourceName: string, feedUrl: string, maxItems = 8): P
 
 // ========== Main Ingestion Function ==========
 export async function runFullIngestion() {
-  console.log(`📡 Starting full news ingestion (keeping articles younger than ${MAX_ARTICLE_AGE_HOURS} hours)...`);
+  console.log(`📡 Starting news ingestion (only articles from ${MIN_DATE.toISOString()} onwards)`);
   let totalAdded = 0;
 
   const feedGroups = [
-    {
-      name: 'Iran General News',
-      feeds: [
-        'https://news.google.com/rss/search?q=iran&hl=en-US&gl=US&ceid=US:en',
-        'https://rss.nytimes.com/services/xml/rss/nyt/Iran.xml',
-        'https://feeds.bbci.co.uk/news/world/middle_east/iran/rss.xml',
-        'https://www.aljazeera.com/xml/rss/iran.xml',
-      ],
-    },
-    {
-      name: 'Israel General News',
-      feeds: [
-        'https://news.google.com/rss/search?q=israel&hl=en-US&gl=US&ceid=US:en',
-        'https://rss.nytimes.com/services/xml/rss/nyt/Israel.xml',
-        'https://feeds.bbci.co.uk/news/world/middle_east/israel/rss.xml',
-      ],
-    },
-    {
-      name: 'Iran-Israel Conflict',
-      feeds: [
-        'https://news.google.com/rss/search?q=iran+israel+conflict&hl=en-US&gl=US&ceid=US:en',
-        'https://news.yahoo.com/rss/topic/iran-israel-conflict',
-        'https://www.timesofisrael.com/feed/',
-      ],
-    },
-    {
-      name: 'Al Jazeera',
-      feeds: [
-        'https://www.aljazeera.com/xml/rss/all.xml',
-        'https://www.aljazeera.com/xml/rss/news.xml',
-      ],
-    },
-    {
-      name: 'CNN',
-      feeds: [
-        'http://rss.cnn.com/rss/edition_world.rss',
-        'http://www.cnn.com/rss/cnn_topstories.rss',
-        'http://rss.cnn.com/rss/edition_meast.rss',
-      ],
-    },
-    {
-      name: 'Dawn (Pakistan)',
-      feeds: [
-        'https://www.dawn.com/feed/',
-        'https://www.dawn.com/feed/pakistan/',
-      ],
-    },
-    {
-      name: 'Geo News (Pakistan)',
-      feeds: ['https://www.geo.tv/rss/1'],
-    },
-    {
-      name: 'The Express Tribune (Pakistan)',
-      feeds: ['https://tribune.com.pk/feed/'],
-    },
-    {
-      name: 'Pakistan Today',
-      feeds: ['https://www.pakistantoday.com.pk/feed/'],
-    },
-    {
-      name: 'The News International (Pakistan)',
-      feeds: ['https://www.thenews.com.pk/feed'],
-    },
-    {
-      name: 'Middle East General',
-      feeds: [
-        'https://news.google.com/rss/search?q=middle+east&hl=en-US&gl=US&ceid=US:en',
-        'https://www.aljazeera.com/xml/rss/middle-east.xml',
-      ],
-    },
-    {
-      name: 'International – BBC',
-      feeds: [
-        'http://feeds.bbci.co.uk/news/world/rss.xml',
-        'https://feeds.bbci.co.uk/news/world/rss.xml',
-      ],
-    },
+    { name: 'Iran General News', feeds: [
+      'https://news.google.com/rss/search?q=iran&hl=en-US&gl=US&ceid=US:en',
+      'https://rss.nytimes.com/services/xml/rss/nyt/Iran.xml',
+      'https://feeds.bbci.co.uk/news/world/middle_east/iran/rss.xml',
+      'https://www.aljazeera.com/xml/rss/iran.xml',
+    ]},
+    { name: 'Israel General News', feeds: [
+      'https://news.google.com/rss/search?q=israel&hl=en-US&gl=US&ceid=US:en',
+      'https://rss.nytimes.com/services/xml/rss/nyt/Israel.xml',
+      'https://feeds.bbci.co.uk/news/world/middle_east/israel/rss.xml',
+    ]},
+    { name: 'Iran-Israel Conflict', feeds: [
+      'https://news.google.com/rss/search?q=iran+israel+conflict&hl=en-US&gl=US&ceid=US:en',
+      'https://news.yahoo.com/rss/topic/iran-israel-conflict',
+      'https://www.timesofisrael.com/feed/',
+    ]},
+    { name: 'Al Jazeera', feeds: [
+      'https://www.aljazeera.com/xml/rss/all.xml',
+      'https://www.aljazeera.com/xml/rss/news.xml',
+    ]},
+    { name: 'CNN', feeds: [
+      'http://rss.cnn.com/rss/edition_world.rss',
+      'http://www.cnn.com/rss/cnn_topstories.rss',
+      'http://rss.cnn.com/rss/edition_meast.rss',
+    ]},
+    { name: 'Dawn (Pakistan)', feeds: [
+      'https://www.dawn.com/feed/',
+      'https://www.dawn.com/feed/pakistan/',
+    ]},
+    { name: 'Geo News (Pakistan)', feeds: ['https://www.geo.tv/rss/1'] },
+    { name: 'The Express Tribune (Pakistan)', feeds: ['https://tribune.com.pk/feed/'] },
+    { name: 'Pakistan Today', feeds: ['https://www.pakistantoday.com.pk/feed/'] },
+    { name: 'The News International (Pakistan)', feeds: ['https://www.thenews.com.pk/feed'] },
+    { name: 'Middle East General', feeds: [
+      'https://news.google.com/rss/search?q=middle+east&hl=en-US&gl=US&ceid=US:en',
+      'https://www.aljazeera.com/xml/rss/middle-east.xml',
+    ]},
+    { name: 'International – BBC', feeds: [
+      'http://feeds.bbci.co.uk/news/world/rss.xml',
+      'https://feeds.bbci.co.uk/news/world/rss.xml',
+    ]},
   ];
 
   for (const group of feedGroups) {
     let success = false;
     for (const feedUrl of group.feeds) {
       if (success) break;
-      const added = await processFeed(group.name, feedUrl, 6);
+      const added = await processFeed(group.name, feedUrl, 8);
       if (added > 0) {
         totalAdded += added;
         success = true;
@@ -249,6 +209,6 @@ export async function runFullIngestion() {
     if (!success) console.error(`❌ All feeds failed for group: ${group.name}`);
   }
 
-  console.log(`🏁 Ingestion completed. Total new articles added: ${totalAdded}`);
+  console.log(`🏁 Ingestion completed. Total new articles added (from ${MIN_DATE.toISOString()} onwards): ${totalAdded}`);
   return { totalAdded };
 }

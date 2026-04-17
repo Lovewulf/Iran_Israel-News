@@ -44,7 +44,7 @@ app.post('/api/generate-report', async (req, res) => {
         'X-Title': 'Iran-Israel Conflict Monitor',
       },
       body: JSON.stringify({
-        model: 'meta-llama/llama-3.3-70b-instruct:free',
+         model: 'google/gemma-2-9b-it:free',
         messages: [
           {
             role: 'system',

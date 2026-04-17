@@ -17,14 +17,22 @@ app.use(express.json());
 // Serve static files from the same directory where server.js lives (which is dist/)
 app.use(express.static(__dirname));
 
-// Gemini AI endpoint
+// Gemini AI endpoint (with robust error handling)
 app.post('/api/generate-report', async (req, res) => {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return res.status(500).json({ error: 'GEMINI_API_KEY is not set' });
+    console.error('❌ GEMINI_API_KEY is not set in environment');
+    return res.status(500).json({ error: 'Gemini API key not configured. Please set GEMINI_API_KEY in Render environment.' });
   }
 
-  const genAI = new GoogleGenerativeAI(apiKey);
+  let genAI;
+  try {
+    genAI = new GoogleGenerativeAI(apiKey);
+  } catch (err) {
+    console.error('❌ Failed to initialize Gemini AI:', err);
+    return res.status(500).json({ error: 'Gemini AI initialization failed.' });
+  }
+
   const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
   try {
@@ -33,14 +41,23 @@ app.post('/api/generate-report', async (req, res) => {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
+    console.log('🤖 Generating AI report...');
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const text = response.text();
 
+    console.log('✅ AI report generated successfully');
     res.json({ content: text });
-  } catch (error) {
-    console.error('Error generating content:', error);
-    res.status(500).json({ error: 'Failed to generate content' });
+  } catch (error: any) {
+    console.error('❌ Error generating content:', error);
+    // Provide more specific error messages based on error type
+    if (error.message?.includes('API key')) {
+      res.status(401).json({ error: 'Invalid Gemini API key. Please check your credentials.' });
+    } else if (error.message?.includes('quota')) {
+      res.status(429).json({ error: 'Gemini API quota exceeded. Please try again later.' });
+    } else {
+      res.status(500).json({ error: error.message || 'Failed to generate content' });
+    }
   }
 });
 

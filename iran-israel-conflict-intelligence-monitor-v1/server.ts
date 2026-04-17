@@ -13,7 +13,6 @@ const port = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// Helper to safely get error message
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === 'string') return error;
@@ -24,7 +23,6 @@ function getErrorMessage(error: unknown): string {
   }
 }
 
-// ========== API Routes ==========
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
@@ -32,7 +30,7 @@ app.get('/api/health', (req, res) => {
 app.post('/api/generate-report', async (req, res) => {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
-    console.error('❌ OPENROUTER_API_KEY is not set');
+    console.error('❌ OPENROUTER_API_KEY not set');
     return res.status(500).json({ error: 'OpenRouter API key not configured.' });
   }
 
@@ -42,15 +40,17 @@ app.post('/api/generate-report', async (req, res) => {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
+    // Truncate prompt to 4000 chars
     if (prompt.length > 4000) {
-      console.log(`⚠️ Prompt truncated from ${prompt.length} to 4000 chars`);
       prompt = prompt.substring(0, 4000);
     }
 
+    // Current working free models (as of April 2026)
     const modelsToTry = [
       'meta-llama/llama-3.2-3b-instruct:free',
       'microsoft/phi-3-mini-128k-instruct:free',
-      'mistralai/mistral-7b-instruct:free',
+      'qwen/qwen-2.5-7b-instruct:free',
+      'google/gemma-2-9b-it:free',
       'openrouter/free',
     ];
 
@@ -58,6 +58,9 @@ app.post('/api/generate-report', async (req, res) => {
     for (const model of modelsToTry) {
       try {
         console.log(`🤖 Trying model: ${model}...`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s timeout
+
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -73,32 +76,38 @@ app.post('/api/generate-report', async (req, res) => {
               { role: 'user', content: prompt },
             ],
             temperature: 0.5,
-            max_tokens: 3000,
+            max_tokens: 2500, // Increased for bilingual output
           }),
+          signal: controller.signal,
         });
+        clearTimeout(timeoutId);
 
         if (response.ok) {
           const data = await response.json();
           const text = data.choices?.[0]?.message?.content || '';
-          if (text) {
+          if (text && text.length > 50) {
             console.log(`✅ Report generated using model: ${model}`);
             return res.json({ content: text });
           } else {
-            throw new Error('Empty response');
+            throw new Error('Empty or too short response');
           }
         } else {
           const errorText = await response.text();
-          console.warn(`⚠️ Model ${model} failed with ${response.status}: ${errorText.substring(0, 200)}`);
-          lastError = new Error(`HTTP ${response.status}: ${errorText.substring(0, 100)}`);
+          console.warn(`⚠️ Model ${model} failed (${response.status}): ${errorText.substring(0, 200)}`);
+          lastError = new Error(`HTTP ${response.status}`);
         }
       } catch (err) {
-        console.warn(`⚠️ Model ${model} threw error:`, getErrorMessage(err));
+        console.warn(`⚠️ Model ${model} error:`, getErrorMessage(err));
         lastError = err;
       }
     }
 
-    console.error('❌ All models failed');
-    return res.status(500).json({ error: getErrorMessage(lastError) || 'All AI models unavailable' });
+    // If all models fail, return a fallback response (not a 500) so the frontend can show a message
+    console.error('❌ All AI models failed');
+    return res.status(503).json({
+      error: 'AI service temporarily unavailable. Please try again later.',
+      fallback: true,
+    });
   } catch (error) {
     console.error('❌ Unexpected error:', error);
     return res.status(500).json({ error: getErrorMessage(error) });
@@ -116,22 +125,19 @@ app.post('/api/ingest', async (req, res) => {
   }
 });
 
-// ========== Static Frontend ==========
+// Serve static frontend
 app.use(express.static(__dirname));
-
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// ========== Scheduled Ingestion ==========
+// Scheduled ingestion
 (async () => {
   console.log('🚀 Initial ingestion...');
   try {
     const result = await runFullIngestion();
     console.log(`✅ Added ${result.totalAdded} articles.`);
-  } catch (err) {
-    console.error('❌ Initial ingestion failed:', getErrorMessage(err));
-  }
+  } catch (err) { console.error('❌ Initial ingestion failed:', getErrorMessage(err)); }
 })();
 
 setInterval(async () => {
@@ -139,9 +145,7 @@ setInterval(async () => {
   try {
     const result = await runFullIngestion();
     console.log(`✅ Added ${result.totalAdded} articles.`);
-  } catch (err) {
-    console.error('❌ Scheduled ingestion failed:', getErrorMessage(err));
-  }
+  } catch (err) { console.error('❌ Scheduled ingestion failed:', getErrorMessage(err)); }
 }, 15 * 60 * 1000);
 
 app.listen(port, () => console.log(`✅ Server running on port ${port}`));

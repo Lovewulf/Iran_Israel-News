@@ -1,48 +1,16 @@
 import type { Article, AIReport } from '../types';
 
-// Track last report generation time and article IDs
-let lastReportTimestamp: Date | null = null;
-let lastReportArticleIds: string[] = [];
-
 export async function generateSituationReport(
   articles: Article[],
   type: 'daily' | 'flash' | 'strategic'
 ): Promise<Partial<AIReport>> {
-  if (!articles.length) {
-    throw new Error('No articles provided for grounding');
-  }
+  if (!articles.length) throw new Error('No articles provided');
 
-  // Check if there are new articles since last report
-  const currentArticleIds = articles.map(a => a.id!).filter(Boolean);
-  const newestArticleDate = new Date(Math.max(...articles.map(a => new Date(a.published_at).getTime())));
-  
-  if (lastReportTimestamp && lastReportArticleIds.length > 0) {
-    // If the set of article IDs is identical, no new news
-    const hasNewArticles = !currentArticleIds.every(id => lastReportArticleIds.includes(id)) ||
-                           currentArticleIds.length !== lastReportArticleIds.length;
-    
-    if (!hasNewArticles && type !== 'flash') {
-      // For daily/strategic, skip if no new articles
-      const lastReportDate = lastReportTimestamp.toLocaleDateString();
-      return {
-        title: `${type === 'daily' ? 'Daily' : 'Strategic'} Intelligence Brief (No New Updates)`,
-        content: `⚠️ No significant new developments have been reported since ${lastReportDate}. Please refer to the most recent report for current analysis.\n\nTo generate a fresh report, wait for new articles to be ingested (the system fetches news every 15 minutes).`,
-        type,
-        source_article_ids: currentArticleIds,
-        impact_score: 5,
-        status: 'draft',
-        is_verified: false,
-      };
-    }
-  }
-
-  // Update tracking
-  lastReportTimestamp = new Date();
-  lastReportArticleIds = currentArticleIds;
-
-  // Prepare context with more structured data (limit to 25 articles for deeper analysis)
-  const context = articles.slice(0, 25).map(a => 
-    `- **${a.title}**\n  Summary: ${a.summary || a.content?.slice(0, 250)}\n  Source: ${a.source_name}\n  Date: ${new Date(a.published_at).toLocaleDateString()}`
+  // Sort by date (newest first)
+  const sorted = [...articles].sort((a,b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime());
+  const latest20 = sorted.slice(0, 20);
+  const context = latest20.map(a => 
+    `- ${a.title}\n  ${a.summary || a.content?.slice(0, 300)}\n  Source: ${a.source_name}\n  Date: ${new Date(a.published_at).toLocaleDateString()}`
   ).join('\n\n');
 
   let prompt = '';
@@ -51,53 +19,47 @@ export async function generateSituationReport(
   switch (type) {
     case 'flash':
       reportTitle = 'Flash Intelligence Update';
-      prompt = `You are an expert geopolitical intelligence analyst. Based STRICTLY on the following news articles, produce a CONCISE FLASH REPORT (max 350 words) for senior decision-makers.
+      prompt = `You are an experienced geopolitical intelligence analyst. Based STRICTLY on the following news articles, produce a CONCISE FLASH REPORT (max 400 words) for senior decision-makers. Include:
 
-**REQUIREMENTS:**
-- Focus ONLY on breaking developments, immediate threats, or urgent diplomatic moves from the last 24 hours.
-- Cross-reference multiple sources if available; note any contradictions.
-- Use bullet points for key takeaways.
-- Add a "Confidence Level" (High/Medium/Low) based on source reliability and corroboration.
+**Key Developments** (3-5 bullet points, with specific dates/times if available)
+**Immediate Threats** (any imminent military, diplomatic, or economic risks)
+**Contradictions or Uncertainties** (if sources disagree or info is unverified)
+**Recommended Actions** (2-3 brief, actionable steps)
 
-**ARTICLES:**
-${context}
+Be factual, avoid speculation. Cite sources implicitly.
 
-Generate the flash report now.`;
+${context}`;
       break;
       
     case 'strategic':
       reportTitle = 'Strategic Assessment';
-      prompt = `You are a senior intelligence analyst. Based SOLELY on the following articles, produce a DETAILED STRATEGIC ASSESSMENT (max 1000 words).
+      prompt = `You are a senior intelligence analyst. Based SOLELY on the following articles, produce a DETAILED STRATEGIC ASSESSMENT (max 1200 words). Structure as:
 
-**STRUCTURE:**
 **1. Executive Summary** (3-4 sentences capturing the essence)
-**2. Key Strategic Shifts** (military, diplomatic, economic – cite specific articles)
-**3. Actor Analysis** (Iran, Israel, US, regional proxies – infer intentions from actions)
-**4. Contradictions & Discrepancies** (if different sources report conflicting info)
-**5. Risk Assessment** (scale 1-10 for: a) escalation, b) war, c) diplomacy collapse)
-**6. Forecast for Next 7 Days** (most likely scenarios with reasoning)
+**2. Key Strategic Shifts** (military, diplomatic, economic – note any changes from previous patterns)
+**3. Actor Analysis** (Iran, Israel, US, regional proxies – their stated positions, actions, and apparent red lines)
+**4. Risk Assessment** (provide numeric scores 1-10 for: escalation to open conflict, diplomatic breakthrough, economic disruption – with brief justification)
+**5. Forecast for Next 7 Days** (most likely scenarios, with probability percentages if possible)
+**6. Intelligence Gaps** (what information is missing to fully assess the situation)
 
-**ARTICLES:**
-${context}
+Use evidence-based language. Highlight any contradictions between sources.
 
-Write the strategic assessment in professional, evidence-based language. Avoid speculation beyond what the articles imply.`;
+${context}`;
       break;
       
     default: // daily
       reportTitle = 'Daily Intelligence Brief';
-      prompt = `You are an intelligence analyst. Based ONLY on the following news articles, produce a DAILY BRIEF (max 600 words) for military and diplomatic staff.
+      prompt = `You are an intelligence analyst. Based ONLY on the following news articles, produce a DAILY BRIEF (max 700 words) for military and diplomatic staff. Structure as:
 
-**STRUCTURE:**
-**Top Developments** (3-5 bullet points, each with source attribution)
-**Casualty & Incident Report** (if available, with numbers and locations)
-**Diplomatic Reactions** (key statements from Iran, Israel, US, UN, etc.)
-**What to Watch Today** (2-3 emerging trends or pending events)
-**Source Reliability Note** (mention any conflicting reports or unconfirmed info)
+**Top Developments** (3-5 bullet points, each with a brief explanation)
+**Casualty & Incident Report** (if available – numbers, locations, significance)
+**Diplomatic Reactions** (key statements from governments and international bodies)
+**Media Narrative Analysis** (how different outlets frame the same event – note any bias or inconsistency)
+**What to Watch Today** (2-3 specific events or indicators to monitor)
 
-**ARTICLES:**
-${context}
+Be concise, factual, and actionable. If information is missing, state that explicitly.
 
-Write concisely, factually, and actionably.`;
+${context}`;
   }
 
   try {
@@ -106,36 +68,31 @@ Write concisely, factually, and actionably.`;
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt }),
     });
-    if (!response.ok) throw new Error(`Report generation failed: ${response.statusText}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
 
-    // Extract impact score from content (improved heuristic)
     let impactScore = 5;
     if (data.content) {
-      const riskMatch = data.content.match(/risk:?\s*(\d+)/i);
-      if (riskMatch) impactScore = Math.min(10, parseInt(riskMatch[1]) || 5);
-      else if (data.content.includes('Critical')) impactScore = 8;
-      else if (data.content.includes('High')) impactScore = 7;
-      else if (data.content.includes('Moderate')) impactScore = 5;
-      else if (data.content.includes('Low')) impactScore = 3;
+      const match = data.content.match(/risk:?\s*(\d+)/i);
+      if (match) impactScore = Math.min(10, parseInt(match[1]) || 5);
     }
 
     return {
       title: reportTitle,
       content: data.content,
       type,
-      source_article_ids: currentArticleIds,
+      source_article_ids: articles.map(a => a.id!).filter(Boolean),
       impact_score: impactScore,
       status: 'published',
       is_verified: false,
     };
   } catch (error) {
-    console.error('AI report generation error:', error);
+    console.error('AI report error:', error);
     return {
       title: reportTitle,
-      content: `⚠️ AI service temporarily unavailable. Please try again later.\n\nBased on ${articles.length} articles, the key developments are: ${articles.slice(0, 5).map(a => a.title).join('; ')}`,
+      content: `⚠️ AI service error. Please try later.\n\nBased on ${articles.length} articles: ${articles.slice(0,3).map(a=>a.title).join('; ')}`,
       type,
-      source_article_ids: currentArticleIds,
+      source_article_ids: articles.map(a => a.id!).filter(Boolean),
       impact_score: 5,
       status: 'draft',
       is_verified: false,

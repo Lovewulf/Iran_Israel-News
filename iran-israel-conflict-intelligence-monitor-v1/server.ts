@@ -26,12 +26,18 @@ app.post('/api/generate-report', async (req, res) => {
   const groq = new Groq({ apiKey: groqApiKey });
 
   try {
-    const { prompt } = req.body;
+    let { prompt } = req.body;
     if (!prompt) {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
-    console.log('🤖 Generating AI report...');
+    // Truncate prompt to ~4000 characters to avoid token limits
+    if (prompt.length > 4000) {
+      console.log(`⚠️ Prompt too long (${prompt.length} chars), truncating to 4000`);
+      prompt = prompt.substring(0, 4000) + "\n\n[truncated due to length]";
+    }
+
+    console.log(`🤖 Generating report (prompt length: ${prompt.length})...`);
     const chatCompletion = await groq.chat.completions.create({
       messages: [
         { role: 'system', content: 'You are an expert geopolitical intelligence analyst.' },
@@ -48,11 +54,15 @@ app.post('/api/generate-report', async (req, res) => {
     console.log('✅ Report generated');
     res.json({ content: text });
   } catch (error) {
-    console.error('❌ Error:', error);
-    // Safely handle unknown error type
+    console.error('❌ Groq API error:', error);
     let errorMessage = 'Unknown error';
-    if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
-      errorMessage = error.message;
+    if (error && typeof error === 'object') {
+      // Extract the most useful error message
+      if ('message' in error && typeof error.message === 'string') {
+        errorMessage = error.message;
+      } else if ('response' in error && error.response && typeof error.response.data === 'object') {
+        errorMessage = error.response.data?.error?.message || JSON.stringify(error.response.data);
+      }
     }
     res.status(500).json({ error: errorMessage });
   }

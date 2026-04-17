@@ -1,4 +1,4 @@
-import { Timestamp } from 'firebase/firestore';
+// No Firebase import – using standard Date and string types
 
 export interface Article {
   id?: string;
@@ -9,10 +9,10 @@ export interface Article {
   source_name: string;
   source_id?: string;
   source_type: 'rss' | 'news_api' | 'youtube' | 'manual';
-  published_at: Timestamp;
-  ingested_at: Timestamp;
-  first_seen_at: Timestamp;
-  last_updated_at: Timestamp;
+  published_at: Date | string;      // Supabase returns Date or ISO string
+  ingested_at: Date | string;
+  first_seen_at: Date | string;
+  last_updated_at: Date | string;
   fingerprint: string;
   category_id?: string;
   tag_ids: string[];
@@ -32,7 +32,7 @@ export interface AIReport {
   summary?: string;
   type: 'daily' | 'weekly' | 'flash' | 'strategic';
   content: string;
-  generated_at: Timestamp;
+  generated_at: Date | string;
   source_article_ids: string[];
   cluster_ids?: string[];
   impact_score?: number;
@@ -46,16 +46,17 @@ export interface EventCluster {
   title: string;
   description: string;
   article_ids: string[];
-  start_time: Timestamp;
-  end_time: Timestamp;
+  start_time: Date | string;
+  end_time: Date | string;
   severity: 'low' | 'medium' | 'high' | 'critical';
   primary_location?: string;
   related_locations?: string[];
   tags: string[];
   ai_summary?: string;
   verified: boolean;
-  created_at: Timestamp;
-  updated_at: Timestamp;
+  created_at: Date | string;
+  updated_at: Date | string;
+  status?: 'active' | 'archived';
 }
 
 export interface Source {
@@ -65,9 +66,9 @@ export interface Source {
   url?: string;
   api_key?: string;
   is_active: boolean;
-  last_fetch: Timestamp;
+  last_fetch: Date | string;
   fetch_interval_minutes: number;
-  created_at: Timestamp;
+  created_at: Date | string;
 }
 
 export interface User {
@@ -75,6 +76,6 @@ export interface User {
   email: string;
   displayName?: string;
   role: 'viewer' | 'analyst' | 'admin';
-  createdAt: Timestamp;
-  lastLogin: Timestamp;
+  createdAt: Date | string;
+  lastLogin: Date | string;
 }

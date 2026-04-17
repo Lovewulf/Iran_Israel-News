@@ -16,8 +16,8 @@ app.use(express.static(__dirname));
 
 // ========== OpenRouter AI Endpoint ==========
 app.post('/api/generate-report', async (req, res) => {
-  const openRouterApiKey = process.env.OPENROUTER_API_KEY;
-  if (!openRouterApiKey) {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
     console.error('❌ OPENROUTER_API_KEY is not set');
     return res.status(500).json({ error: 'OpenRouter API key not configured.' });
   }
@@ -28,7 +28,7 @@ app.post('/api/generate-report', async (req, res) => {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
-    // Truncate prompt to 4000 chars to avoid token limits (adjust as needed)
+    // Truncate prompt to avoid token limits
     if (prompt.length > 4000) {
       console.log(`⚠️ Prompt truncated from ${prompt.length} to 4000 chars`);
       prompt = prompt.substring(0, 4000);
@@ -38,22 +38,19 @@ app.post('/api/generate-report', async (req, res) => {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${openRouterApiKey}`,
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://iran-israel-news.onrender.com', // Replace with your app's URL
+        'HTTP-Referer': 'https://iran-israel-news.onrender.com',
         'X-Title': 'Iran-Israel Conflict Monitor',
       },
       body: JSON.stringify({
-        model: 'meta-llama/llama-3.3-70b-instruct:free', // Free model (generous limits)
+        model: 'meta-llama/llama-3.3-70b-instruct:free',
         messages: [
           {
             role: 'system',
             content: 'You are an expert geopolitical intelligence analyst. Provide concise, factual, and structured reports based on the news provided.'
           },
-          {
-            role: 'user',
-            content: prompt,
-          },
+          { role: 'user', content: prompt },
         ],
         temperature: 0.5,
         max_tokens: 1500,
@@ -61,13 +58,13 @@ app.post('/api/generate-report', async (req, res) => {
     });
 
     if (!response.ok) {
-      const errorData = await response.text();
-      console.error(`❌ OpenRouter API error (${response.status}):`, errorData);
-      return res.status(response.status).json({ error: `OpenRouter API error: ${response.statusText}` });
+      const errorText = await response.text();
+      console.error(`❌ OpenRouter API error (${response.status}):`, errorText);
+      return res.status(response.status).json({ error: `OpenRouter error: ${response.statusText}` });
     }
 
     const data = await response.json();
-    const text = data.choices[0]?.message?.content || '';
+    const text = data.choices?.[0]?.message?.content || '';
     if (!text) throw new Error('Empty response from OpenRouter');
 
     console.log('✅ AI report generated successfully');

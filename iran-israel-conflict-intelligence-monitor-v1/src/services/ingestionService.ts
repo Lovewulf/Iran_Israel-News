@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import axios from 'axios';
 import Parser from 'rss-parser';
 
-// Supabase client setup (unchanged)
+// Supabase client setup
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!supabaseUrl || !supabaseServiceKey) {
@@ -10,7 +10,7 @@ if (!supabaseUrl || !supabaseServiceKey) {
 }
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// User-Agent rotation (helps avoid simple blocks)
+// User-Agent rotation to avoid simple blocks
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -22,11 +22,12 @@ const parser = new Parser({
   headers: { 'User-Agent': USER_AGENTS[0] },
 });
 
-// --- Helper Functions ---
+// Helper: get random user agent
 const getRandomUserAgent = () => USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 
+// Helper: fetch and parse RSS with retries
 async function fetchFeedWithRetry(url: string, maxRetries = 2): Promise<any> {
-  let lastError;
+  let lastError: unknown;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const response = await axios.get(url, {
@@ -35,7 +36,8 @@ async function fetchFeedWithRetry(url: string, maxRetries = 2): Promise<any> {
       });
       return await parser.parseString(response.data);
     } catch (error) {
-      console.warn(`Attempt ${attempt} failed for ${url}:`, error.message);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.warn(`Attempt ${attempt} failed for ${url}:`, errorMessage);
       lastError = error;
       if (attempt < maxRetries) await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
     }
@@ -43,6 +45,7 @@ async function fetchFeedWithRetry(url: string, maxRetries = 2): Promise<any> {
   throw lastError;
 }
 
+// Helper: process a single feed and insert articles
 async function processFeed(sourceName: string, feedUrl: string): Promise<number> {
   let addedCount = 0;
   try {
@@ -50,8 +53,10 @@ async function processFeed(sourceName: string, feedUrl: string): Promise<number>
     const feed = await fetchFeedWithRetry(feedUrl);
     for (const item of feed.items.slice(0, 5)) {
       if (!item.link) continue;
+      // Check duplicate
       const { data: existing } = await supabase.from('articles').select('url').eq('url', item.link);
       if (existing?.length) continue;
+
       const article = {
         title: item.title || 'No title',
         content: item.content || item.contentSnippet || '',
@@ -63,12 +68,12 @@ async function processFeed(sourceName: string, feedUrl: string): Promise<number>
         ingested_at: new Date().toISOString(),
         first_seen_at: new Date().toISOString(),
         last_updated_at: new Date().toISOString(),
-        fingerprint: Buffer.from(item.link + item.title).toString('base64'),
+        fingerprint: Buffer.from(item.link + (item.title || '')).toString('base64'),
         tag_ids: [],
         image_url: '',
         is_breaking: false,
         content_origin: 'live_rss',
-        is_verified: false
+        is_verified: false,
       };
       const { error } = await supabase.from('articles').insert(article);
       if (error) throw error;
@@ -76,17 +81,18 @@ async function processFeed(sourceName: string, feedUrl: string): Promise<number>
       console.log(`✅ [${sourceName}] Added: ${article.title.substring(0, 60)}...`);
     }
   } catch (error) {
-    console.error(`Failed to process feed for ${sourceName}:`, error.message);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`Failed to process feed for ${sourceName}:`, errorMessage);
   }
   return addedCount;
 }
 
-// --- Main Ingestion Function ---
+// Main ingestion function – tries multiple feeds per category
 export async function runFullIngestion() {
   console.log('📡 Starting multi-source news ingestion with fallbacks...');
   let totalAdded = 0;
 
-  // Define feed groups with fallbacks
+  // Define feed groups (primary + fallbacks)
   const feedGroups = [
     {
       name: 'Iran General News',
@@ -122,13 +128,12 @@ export async function runFullIngestion() {
       if (added > 0) {
         totalAdded += added;
         success = true;
-        console.log(`Successfully processed ${group.name} via ${feedUrl}`);
-        break;
+        console.log(`✅ Successfully processed ${group.name} via ${feedUrl}`);
       } else {
-        console.log(`Failed to get items from ${feedUrl} for ${group.name}, trying next...`);
+        console.log(`⚠️ No items from ${feedUrl} for ${group.name}, trying next fallback...`);
       }
     }
-    if (!success) console.error(`All feeds failed for group: ${group.name}`);
+    if (!success) console.error(`❌ All feeds failed for group: ${group.name}`);
   }
 
   console.log(`🏁 Ingestion finished. Total new articles: ${totalAdded}`);

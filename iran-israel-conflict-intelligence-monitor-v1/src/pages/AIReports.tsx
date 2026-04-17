@@ -35,8 +35,8 @@ const ReportCard = ({ report, idx }: { report: AIReport; idx: number }) => {
   const impactColor = getImpactColor(report.impact_score || 5);
   const impactLabel = getImpactLabel(report.impact_score || 5);
 
-  // Debug log
-  console.log(`Report ${idx} - content length:`, report.content?.length);
+  // Debug: log content presence
+  console.log(`Report ${idx} - has content:`, !!report.content, 'length:', report.content?.length);
 
   const contentToShow = report.content || '';
 
@@ -53,9 +53,7 @@ const ReportCard = ({ report, idx }: { report: AIReport; idx: number }) => {
             <span className="text-xs font-bold uppercase tracking-wider bg-indigo-100 text-indigo-700 px-2 py-1 rounded">
               {report.type} Report
             </span>
-            <span className="text-xs text-gray-500">
-              {formatDate(report.generated_at)}
-            </span>
+            <span className="text-xs text-gray-500">{formatDate(report.generated_at)}</span>
             {report.is_verified && (
               <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded flex items-center gap-1">
                 <ShieldCheck className="w-3 h-3" /> Verified
@@ -81,12 +79,15 @@ const ReportCard = ({ report, idx }: { report: AIReport; idx: number }) => {
       <div className="p-5">
         {contentToShow ? (
           <>
+            {/* Try Markdown first */}
             <div className="prose prose-sm max-w-none prose-headings:text-gray-900 prose-headings:font-bold prose-p:text-gray-600 prose-strong:text-gray-800 prose-ul:text-gray-600 prose-li:text-gray-600">
               <Markdown>
                 {contentToShow.slice(0, isExpanded ? undefined : 500)}
                 {!isExpanded && contentToShow.length > 500 ? '...' : ''}
               </Markdown>
             </div>
+            {/* Fallback plain text if Markdown fails (inspect element to see) */}
+            <div className="hidden" data-testid="plain-text-fallback">{contentToShow}</div>
             {contentToShow.length > 500 && (
               <button
                 onClick={() => setIsExpanded(!isExpanded)}
@@ -114,7 +115,7 @@ export default function AIReports() {
     const fetchReports = async () => {
       try {
         const data = await getAIReports(20);
-        console.log('Fetched reports:', data.length);
+        console.log('Fetched reports count:', data.length);
         setReports(data);
       } catch (error) {
         console.error('Failed to fetch reports:', error);
@@ -146,7 +147,7 @@ export default function AIReports() {
       setReports(updated);
     } catch (error) {
       console.error('Failed to generate report:', error);
-      alert("Failed to generate report. Check console for details.");
+      alert("Failed to generate report. Check console.");
     } finally {
       setGenerating(false);
       setGeneratingType(null);

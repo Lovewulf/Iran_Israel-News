@@ -1,6 +1,5 @@
 import type { Article, AIReport } from '../types';
 
-// Helper to compute a fallback impact score based on keyword analysis
 function computeFallbackScore(content: string): number {
   const keywords = {
     high: ['escalation', 'crisis', 'war', 'attack', 'strike', 'killed', 'missile', 'threat', 'emergency', 'collapse'],
@@ -35,6 +34,11 @@ export async function generateSituationReport(
   let prompt = '';
   let reportTitle = '';
 
+  // Base prompt (English only, then we add Urdu instruction)
+  const basePrompt = (typeSpecific: string) => `${typeSpecific}
+
+IMPORTANT: After completing the English report, produce an EXACT Urdu translation of the entire report. Use professional Urdu (اردو) suitable for intelligence analysis. Start the Urdu section with "**اردو ترجمہ**" on a new line, then write the complete report in Urdu. Do not add extra commentary.`;
+
   switch (type) {
     case 'flash':
       reportTitle = 'Flash Intelligence Update';
@@ -45,10 +49,10 @@ export async function generateSituationReport(
 **CAUSAL ANALYSIS** (brief explanation of why these events are happening now – underlying drivers)
 **RECOMMENDED ACTIONS** (2-3 specific, actionable steps for military/diplomatic staff)
 
-At the very end of your report, on a new line, write: IMPACT SCORE: X/10
+At the very end of the English report, on a new line, write: IMPACT SCORE: X/10
 (Replace X with a number 1-10, where 10 is the most severe/critical.)
 
-Be factual, avoid speculation. If information is missing, state "Not reported". Use the source names as implicit citations.
+${basePrompt('')}
 
 ${context}`;
       break;
@@ -65,10 +69,9 @@ ${context}`;
 **6. FORECAST (7 & 30 DAYS)** (most likely scenario, optimistic scenario, pessimistic scenario – each with probability percentage)
 **7. INTELLIGENCE GAPS** (what critical information is missing to fully assess the situation – be specific)
 
-At the very end of your report, on a new line, write: IMPACT SCORE: X/10
-(Replace X with a number 1-10, where 10 is the most severe/critical.)
+At the very end of the English report, on a new line, write: IMPACT SCORE: X/10
 
-Use evidence-based language. Highlight any contradictions between sources. If a section lacks data, state "Insufficient reporting".
+${basePrompt('')}
 
 ${context}`;
       break;
@@ -84,10 +87,9 @@ ${context}`;
 **WHAT TO WATCH TODAY** (3-5 specific indicators or events to monitor in the next 24 hours, with rationale)
 **BRIEF FORECAST** (2-3 sentences on expected near-term trajectory)
 
-At the very end of your report, on a new line, write: IMPACT SCORE: X/10
-(Replace X with a number 1-10, where 10 is the most severe/critical.)
+At the very end of the English report, on a new line, write: IMPACT SCORE: X/10
 
-Be concise, factual, and actionable. If information is missing, state explicitly.
+${basePrompt('')}
 
 ${context}`;
   }
@@ -102,15 +104,14 @@ ${context}`;
     const data = await response.json();
     let content = data.content || '';
 
-    // Extract impact score from the content (looks for "IMPACT SCORE: X/10")
+    // Extract impact score from the English part (before Urdu)
     let impactScore = 5;
     const scoreMatch = content.match(/IMPACT SCORE:\s*(\d+)\/10/i);
     if (scoreMatch) {
       impactScore = Math.min(10, Math.max(1, parseInt(scoreMatch[1]) || 5));
-      // Remove the score line from the content so it doesn't display in the report
+      // Remove the score line from the displayed content (keep for UI)
       content = content.replace(/IMPACT SCORE:\s*\d+\/10\s*/i, '').trim();
     } else {
-      // Fallback to keyword-based scoring
       impactScore = computeFallbackScore(content);
     }
 

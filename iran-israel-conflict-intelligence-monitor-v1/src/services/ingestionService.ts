@@ -3,7 +3,7 @@ import axios from 'axios';
 import Parser from 'rss-parser';
 
 // ========== Configuration ==========
-const MIN_DATE = new Date('2026-03-01T00:00:00Z'); // March 1, 2026 UTC
+const MIN_DATE = new Date('2026-03-01T00:00:00Z');
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!supabaseUrl || !supabaseServiceKey) {
@@ -46,21 +46,46 @@ async function fetchFeedWithRetry(url: string, maxRetries = 2): Promise<any> {
   throw lastError;
 }
 
-// ========== Helper: Extract image URL ==========
+// ========== Helper: Extract image URL (enhanced) ==========
 async function extractImageUrl(item: any, link: string): Promise<string> {
+  // 1. RSS enclosure
   if (item.enclosure?.url) return item.enclosure.url;
+  // 2. media:content (common in many RSS feeds)
   if (item['media:content']?.['$']?.url) return item['media:content']['$'].url;
+  if (item['media:thumbnail']?.['$']?.url) return item['media:thumbnail']['$'].url;
+  // 3. content:encoded (sometimes contains img tag)
+  if (item['content:encoded']) {
+    const imgMatch = item['content:encoded'].match(/<img[^>]+src="([^">]+)"/);
+    if (imgMatch) return imgMatch[1];
+  }
+  // 4. description or content snippet
   if (item.content) {
     const imgMatch = item.content.match(/<img[^>]+src="([^">]+)"/);
     if (imgMatch) return imgMatch[1];
   }
+  // 5. Fetch the article page and extract Open Graph or Twitter Card image
   if (link) {
     try {
-      const response = await axios.get(link, { timeout: 5000, headers: { 'User-Agent': getRandomUserAgent() } });
-      const ogMatch = response.data.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/);
+      const response = await axios.get(link, { timeout: 8000, headers: { 'User-Agent': getRandomUserAgent() } });
+      const html = response.data;
+      // og:image
+      let ogMatch = html.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/);
       if (ogMatch) return ogMatch[1];
+      // twitter:image
+      let twitterMatch = html.match(/<meta[^>]+name="twitter:image"[^>]+content="([^"]+)"/);
+      if (twitterMatch) return twitterMatch[1];
+      // json-ld (simplified)
+      const jsonLdMatch = html.match(/<script type="application\/ld\+json">(.*?)<\/script>/s);
+      if (jsonLdMatch) {
+        try {
+          const jsonData = JSON.parse(jsonLdMatch[1]);
+          if (jsonData.image?.url) return jsonData.image.url;
+          if (jsonData.image) return jsonData.image;
+        } catch (e) { /* ignore */ }
+      }
     } catch (e) { /* ignore */ }
   }
+  // 6. No image found
   return '';
 }
 
@@ -90,14 +115,12 @@ async function processFeed(sourceName: string, feedUrl: string, maxItems = 10): 
     for (const item of items) {
       if (!item.link) continue;
 
-      // Date filter: skip articles published BEFORE March 1, 2026
       const pubDate = item.isoDate || item.pubDate;
       if (!isOnOrAfterMinDate(pubDate)) {
         console.log(`⏭️ Skipping article older than March 1, 2026: ${item.title?.substring(0, 50)} (${pubDate})`);
         continue;
       }
 
-      // Avoid duplicates
       const { data: existing } = await supabase.from('articles').select('url').eq('url', item.link);
       if (existing && existing.length > 0) continue;
 
@@ -105,7 +128,6 @@ async function processFeed(sourceName: string, feedUrl: string, maxItems = 10): 
       const title = item.title?.trim() || 'No title';
       const content = item.content || item.contentSnippet || '';
       const summary = item.contentSnippet || content.slice(0, 300);
-      // Preserve original publication timestamp as UTC ISO string
       const publishedAt = pubDate ? new Date(pubDate).toISOString() : new Date().toISOString();
       const now = new Date().toISOString();
       const fingerprint = Buffer.from(`${item.link}${title}`).toString('base64');

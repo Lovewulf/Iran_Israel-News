@@ -2,24 +2,37 @@ import { createClient } from '@supabase/supabase-js';
 import axios from 'axios';
 import Parser from 'rss-parser';
 
-// Validate environment variables
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl || !supabaseServiceKey) {
-  throw new Error('Missing Supabase environment variables. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
+  throw new Error('Missing Supabase environment variables');
 }
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
-const parser = new Parser();
 
+// Custom parser with longer timeout and custom headers
+const parser = new Parser({
+  timeout: 10000,
+  headers: {
+    'User-Agent': 'Mozilla/5.0 (compatible; IranIsraelMonitor/1.0; +https://iran-israel-news.onrender.com)'
+  }
+});
+
+// Expanded list of relevant RSS feeds (Iran-Israel conflict focused)
 const NEWS_SOURCES = [
   { name: 'Reuters - Iran', url: 'https://www.reuters.com/world/middle-east/iran/feed/', category: 'news' },
+  { name: 'Reuters - Israel', url: 'https://www.reuters.com/world/middle-east/israel/feed/', category: 'news' },
   { name: 'BBC - Middle East', url: 'http://feeds.bbci.co.uk/news/world/middle_east/rss.xml', category: 'news' },
   { name: 'Al Jazeera - Iran', url: 'https://www.aljazeera.com/xml/rss/iran.xml', category: 'news' },
+  { name: 'Al Jazeera - Israel-Palestine', url: 'https://www.aljazeera.com/xml/rss/palestine.xml', category: 'news' },
   { name: 'Times of Israel', url: 'https://www.timesofisrael.com/feed/', category: 'news' },
-  { name: 'Jerusalem Post - Iran', url: 'https://www.jpost.com/breaking-news/feed', category: 'news' },
-  { name: 'AP News - Iran', url: 'https://apnews.com/hub/iran?format=rss', category: 'news' }
+  { name: 'Jerusalem Post - Breaking', url: 'https://www.jpost.com/breaking-news/feed', category: 'news' },
+  { name: 'Jerusalem Post - Iran', url: 'https://www.jpost.com/iran/feed', category: 'news' },
+  { name: 'AP News - Iran', url: 'https://apnews.com/hub/iran?format=rss', category: 'news' },
+  { name: 'AP News - Israel', url: 'https://apnews.com/hub/israel?format=rss', category: 'news' },
+  { name: 'Haaretz - Iran', url: 'https://www.haaretz.com/about/feed-iran', category: 'news' },
+  { name: 'The National (UAE) - Iran', url: 'https://www.thenationalnews.com/feed/rss/feed/mena/iran.xml', category: 'news' }
 ];
 
 async function extractImageUrl(item: any, link: string): Promise<string> {
@@ -30,58 +43,41 @@ async function extractImageUrl(item: any, link: string): Promise<string> {
   }
   if (link) {
     try {
-      const response = await axios.get(link, { timeout: 5000 });
+      const response = await axios.get(link, { timeout: 8000, headers: { 'User-Agent': parser.options.headers['User-Agent'] } });
       const ogMatch = response.data.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/);
       if (ogMatch) return ogMatch[1];
-    } catch (e) {
-      // Silent fail
-    }
+    } catch (e) { /* ignore */ }
   }
   return '';
 }
 
 export async function runFullIngestion() {
-  console.log('📡 Starting news ingestion...');
+  console.log('📡 Starting multi-source news ingestion...');
   let totalAdded = 0;
+  const results: { source: string; success: boolean; count: number; error?: string }[] = [];
 
   for (const source of NEWS_SOURCES) {
+    let successCount = 0;
     try {
-      console.log(`Fetching from ${source.name}...`);
+      console.log(`🔍 Fetching from ${source.name} (${source.url})...`);
       const feed = await parser.parseURL(source.url);
+      let itemsProcessed = 0;
       
-      for (const item of feed.items.slice(0, 10)) {
-        // Skip items without a link
-        if (!item.link) {
-          console.warn('Skipping item without link');
-          continue;
-        }
-
-        // Check for duplicate by URL
-        const { data: existing, error: checkError } = await supabase
-          .from('articles')
-          .select('url')
-          .eq('url', item.link);
+      for (const item of feed.items.slice(0, 8)) { // limit per source
+        if (!item.link) continue;
         
-        if (checkError) {
-          console.error(`Error checking duplicate for ${item.link}:`, checkError);
-          continue;
-        }
+        // Check duplicate
+        const { data: existing } = await supabase.from('articles').select('url').eq('url', item.link);
         if (existing?.length) continue;
 
         const imageUrl = await extractImageUrl(item, item.link);
-        
-        // Ensure title exists (fallback to 'No title')
         const title = item.title || 'No title';
-        
-        // Convert dates to ISO strings for Supabase
         const publishedAt = item.isoDate ? new Date(item.isoDate).toISOString() : new Date().toISOString();
         const now = new Date().toISOString();
-        
-        // Generate fingerprint safely using non-null values
         const fingerprint = Buffer.from(`${item.link}${title}`).toString('base64');
         
         const article = {
-          title: title,
+          title,
           content: item.content || item.contentSnippet || '',
           summary: item.contentSnippet || item.content?.slice(0, 300) || '',
           url: item.link,
@@ -91,27 +87,28 @@ export async function runFullIngestion() {
           ingested_at: now,
           first_seen_at: now,
           last_updated_at: now,
-          fingerprint: fingerprint,
+          fingerprint,
           tag_ids: [],
           image_url: imageUrl,
-          is_breaking: false,
+          is_breaking: title.toLowerCase().includes('breaking') || title.toLowerCase().includes('urgent'),
           content_origin: 'live_rss',
           is_verified: false
         };
 
-        const { error: insertError } = await supabase.from('articles').insert(article);
-        if (insertError) {
-          console.error(`Failed to insert article ${title}:`, insertError);
-          continue;
-        }
+        const { error } = await supabase.from('articles').insert(article);
+        if (error) throw error;
+        successCount++;
         totalAdded++;
-        console.log(`✅ Added: ${title}`);
+        console.log(`✅ [${source.name}] Added: ${title.substring(0, 60)}...`);
       }
-    } catch (err) {
-      console.error(`❌ Failed to fetch ${source.name}:`, err);
+      results.push({ source: source.name, success: true, count: successCount });
+    } catch (err: any) {
+      console.error(`❌ Failed for ${source.name}:`, err.message || err);
+      results.push({ source: source.name, success: false, count: 0, error: err.message });
     }
   }
   
-  console.log(`🏁 Ingestion finished. Added ${totalAdded} new articles.`);
-  return { totalAdded };
+  console.log(`🏁 Ingestion finished. Total new articles: ${totalAdded}`);
+  console.table(results);
+  return { totalAdded, details: results };
 }

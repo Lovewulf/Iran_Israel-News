@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { Calendar, Clock, ExternalLink, ChevronRight } from 'lucide-react';
-import { format } from 'date-fns';
+import { Calendar, Clock, ExternalLink } from 'lucide-react';
 
 interface TimelineArticle {
   id: string;
@@ -17,6 +16,17 @@ interface GroupedArticles {
   date: string;
   articles: TimelineArticle[];
 }
+
+// Native date formatting (no external libraries)
+const formatMonthDayYear = (isoString: string) => {
+  const date = new Date(isoString);
+  return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+};
+
+const formatTime = (isoString: string) => {
+  const date = new Date(isoString);
+  return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+};
 
 export default function Timeline() {
   const [groups, setGroups] = useState<GroupedArticles[]>([]);
@@ -34,7 +44,7 @@ export default function Timeline() {
           .gte('published_at', thirtyDaysAgo.toISOString())
           .order('published_at', { ascending: false });
         if (error) throw error;
-        if (!data) {
+        if (!data || data.length === 0) {
           setGroups([]);
           setLoading(false);
           return;
@@ -42,7 +52,7 @@ export default function Timeline() {
         // Group by date (YYYY-MM-DD)
         const grouped: Record<string, TimelineArticle[]> = {};
         data.forEach((article: TimelineArticle) => {
-          const dateKey = format(new Date(article.published_at), 'yyyy-MM-dd');
+          const dateKey = new Date(article.published_at).toISOString().split('T')[0];
           if (!grouped[dateKey]) grouped[dateKey] = [];
           grouped[dateKey].push(article);
         });
@@ -108,7 +118,7 @@ export default function Timeline() {
             {/* Date marker */}
             <div className="flex justify-center mb-6">
               <div className="bg-indigo-600 text-white px-4 py-1 rounded-full text-sm font-medium shadow-md">
-                {format(new Date(group.date), 'MMMM d, yyyy')}
+                {formatMonthDayYear(group.date)}
               </div>
             </div>
 
@@ -147,12 +157,14 @@ export default function Timeline() {
                         <div className="p-4">
                           <div className="flex items-center gap-2 text-xs text-gray-500 mb-2">
                             <Clock className="w-3 h-3" />
-                            {format(new Date(article.published_at), 'h:mm a')}
+                            {formatTime(article.published_at)}
                             <span className="mx-1">•</span>
                             <span className="font-medium text-indigo-600">{article.source_name}</span>
                           </div>
                           <h3 className="font-bold text-gray-900 mb-2 line-clamp-2">{article.title}</h3>
-                          <p className="text-gray-600 text-sm line-clamp-3">{article.summary || 'Click to read full article'}</p>
+                          <p className="text-gray-600 text-sm line-clamp-3">
+                            {article.summary || 'Click to read full article'}
+                          </p>
                           <div className="mt-3 flex items-center gap-1 text-indigo-600 text-sm font-medium">
                             Read more <ExternalLink className="w-3 h-3" />
                           </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Sparkles, Activity, ChevronRight, Calendar, ShieldCheck, RefreshCw, Zap, TrendingUp, ShieldAlert } from 'lucide-react';
+import { FileText, Sparkles, Activity, ChevronRight, Calendar, ShieldCheck, RefreshCw, Zap, TrendingUp, ShieldAlert, AlertTriangle, CheckCircle } from 'lucide-react';
 import { AIReport, Article } from '../types';
 import { getAIReports, getArticles, saveReport } from '../services/firestoreService';
 import { generateSituationReport } from '../services/aiService';
@@ -16,57 +16,78 @@ const formatDate = (dateValue: any) => {
   }
 };
 
+const getImpactColor = (score: number) => {
+  if (score >= 8) return 'bg-red-100 text-red-800 border-red-300';
+  if (score >= 6) return 'bg-orange-100 text-orange-800 border-orange-300';
+  if (score >= 4) return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+  return 'bg-green-100 text-green-800 border-green-300';
+};
+
+const getImpactLabel = (score: number) => {
+  if (score >= 8) return 'Critical';
+  if (score >= 6) return 'High';
+  if (score >= 4) return 'Moderate';
+  return 'Low';
+};
+
 const ReportCard = ({ report, idx }: { report: AIReport; idx: number }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const impactColor = getImpactColor(report.impact_score || 5);
+  const impactLabel = getImpactLabel(report.impact_score || 5);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: idx * 0.05 }}
-      className="bg-card border border-border rounded-xl overflow-hidden hover:border-primary/30 transition-all"
+      className="bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-lg transition-all"
     >
-      <div className="p-5 border-b border-border bg-muted/20">
-        <div className="flex justify-between items-start mb-3">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold uppercase tracking-wider bg-primary/10 text-primary px-2 py-1 rounded">
+      <div className="p-5 border-b border-gray-100 bg-gray-50">
+        <div className="flex justify-between items-start mb-3 flex-wrap gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-bold uppercase tracking-wider bg-indigo-100 text-indigo-700 px-2 py-1 rounded">
               {report.type} Report
             </span>
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs text-gray-500">
               {formatDate(report.generated_at)}
             </span>
             {report.is_verified && (
-              <span className="text-xs bg-green-500/10 text-green-500 px-2 py-1 rounded flex items-center gap-1">
+              <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded flex items-center gap-1">
                 <ShieldCheck className="w-3 h-3" /> Verified
               </span>
             )}
+            <span className={`text-xs px-2 py-1 rounded-full border font-medium ${impactColor}`}>
+              Impact: {impactLabel} ({report.impact_score}/10)
+            </span>
           </div>
         </div>
-        <h3 className="text-xl font-bold mb-2">{report.title}</h3>
-        <div className="flex gap-4 text-sm">
+        <h3 className="text-xl font-bold text-gray-900 mb-2">{report.title}</h3>
+        <div className="flex gap-4 text-sm text-gray-500">
           <div className="flex items-center gap-1">
-            <TrendingUp className="w-4 h-4 text-yellow-500" />
-            <span>Impact Score: <strong>{report.impact_score}/10</strong></span>
-          </div>
-          <div className="flex items-center gap-1">
-            <ShieldAlert className="w-4 h-4 text-blue-500" />
-            <span>Status: <strong>{report.status}</strong></span>
-          </div>
-          <div className="flex items-center gap-1">
-            <FileText className="w-4 h-4 text-green-500" />
+            <FileText className="w-4 h-4 text-indigo-500" />
             <span>Sources: <strong>{report.source_article_ids?.length || 0}</strong></span>
+          </div>
+          <div className="flex items-center gap-1">
+            <Calendar className="w-4 h-4 text-gray-400" />
+            <span>{formatDate(report.generated_at)}</span>
           </div>
         </div>
       </div>
       <div className="p-5">
-        <div className="prose prose-sm dark:prose-invert max-w-none">
-          <Markdown>{report.content.slice(0, isExpanded ? undefined : 300)}{!isExpanded && report.content.length > 300 ? '...' : ''}</Markdown>
+        <div className="prose prose-sm max-w-none prose-headings:text-gray-900 prose-headings:font-bold prose-p:text-gray-600 prose-strong:text-gray-800 prose-ul:text-gray-600 prose-li:text-gray-600">
+          <Markdown>
+            {report.content.slice(0, isExpanded ? undefined : 500)}
+            {!isExpanded && report.content.length > 500 ? '...' : ''}
+          </Markdown>
         </div>
-        <button
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="mt-4 text-xs font-bold text-primary hover:underline flex items-center gap-1 uppercase tracking-wider"
-        >
-          {isExpanded ? 'Collapse Analysis' : 'Read Full Report'} <ChevronRight className="w-3 h-3" />
-        </button>
+        {report.content.length > 500 && (
+          <button
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="mt-4 text-xs font-bold text-indigo-600 hover:underline flex items-center gap-1 uppercase tracking-wider"
+          >
+            {isExpanded ? 'Collapse Analysis' : 'Read Full Report'} <ChevronRight className="w-3 h-3" />
+          </button>
+        )}
       </div>
     </motion.div>
   );
@@ -76,6 +97,7 @@ export default function AIReports() {
   const [reports, setReports] = useState<AIReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [generatingType, setGeneratingType] = useState<'daily' | 'flash' | 'strategic' | null>(null);
 
   useEffect(() => {
     const fetchReports = async () => {
@@ -93,8 +115,9 @@ export default function AIReports() {
 
   const handleGenerate = async (type: AIReport['type']) => {
     setGenerating(true);
+    setGeneratingType(type);
     try {
-      const articles = await getArticles(20);
+      const articles = await getArticles(30);
       if (articles.length === 0) {
         alert("No articles found. Ingest some data first.");
         return;
@@ -105,9 +128,10 @@ export default function AIReports() {
       setReports(updated);
     } catch (error) {
       console.error('Failed to generate report:', error);
-      alert("Failed to generate report.");
+      alert("Failed to generate report. Check console.");
     } finally {
       setGenerating(false);
+      setGeneratingType(null);
     }
   };
 
@@ -115,8 +139,8 @@ export default function AIReports() {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="text-center">
-          <Activity className="w-8 h-8 animate-spin text-primary mx-auto mb-2" />
-          <p className="text-muted-foreground">Loading intelligence reports...</p>
+          <Activity className="w-8 h-8 animate-spin text-indigo-600 mx-auto mb-2" />
+          <p className="text-gray-500">Loading intelligence reports...</p>
         </div>
       </div>
     );
@@ -124,43 +148,54 @@ export default function AIReports() {
 
   return (
     <div className="container max-w-4xl mx-auto py-8 px-4">
-      <div className="flex justify-between items-center mb-8">
+      <div className="flex justify-between items-center mb-8 flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <Sparkles className="w-8 h-8 text-primary" />
+          <h1 className="text-3xl font-bold flex items-center gap-2 text-gray-900">
+            <Sparkles className="w-8 h-8 text-indigo-600" />
             AI Intelligence Reports
           </h1>
-          <p className="text-muted-foreground mt-1">
-            Automated strategic reports synthesized by the Sentinel AI engine.
+          <p className="text-gray-500 mt-1">
+            Automated strategic reports synthesized by Gemini AI based on recent articles.
           </p>
         </div>
         <div className="flex gap-2">
           <button
             onClick={() => handleGenerate('flash')}
             disabled={generating}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-primary/90"
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-indigo-700 transition disabled:opacity-50"
           >
-            {generating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+            {generatingType === 'flash' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
             Flash Report
           </button>
           <button
             onClick={() => handleGenerate('daily')}
             disabled={generating}
-            className="px-4 py-2 bg-secondary text-secondary-foreground rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-secondary/80"
+            className="px-4 py-2 bg-gray-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-gray-800 transition disabled:opacity-50"
           >
-            {generating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Calendar className="w-4 h-4" />}
-            Daily Assessment
+            {generatingType === 'daily' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Calendar className="w-4 h-4" />}
+            Daily Brief
+          </button>
+          <button
+            onClick={() => handleGenerate('strategic')}
+            disabled={generating}
+            className="px-4 py-2 bg-amber-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-amber-800 transition disabled:opacity-50"
+          >
+            {generatingType === 'strategic' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <TrendingUp className="w-4 h-4" />}
+            Strategic Assessment
           </button>
         </div>
       </div>
+
       {reports.length === 0 ? (
-        <div className="text-center py-16 bg-muted/20 rounded-lg">
-          <ShieldAlert className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-          <h3 className="text-xl font-semibold">No reports available</h3>
-          <p className="text-muted-foreground mt-1">Click "Generate Assessment" to create your first intelligence report.</p>
+        <div className="text-center py-16 bg-gray-50 rounded-lg">
+          <ShieldAlert className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+          <h3 className="text-xl font-semibold text-gray-700">No reports available</h3>
+          <p className="text-gray-500 mt-1">
+            Click one of the buttons above to generate your first intelligence report.
+          </p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-6">
           {reports.map((report, idx) => (
             <ReportCard key={report.id} report={report} idx={idx} />
           ))}

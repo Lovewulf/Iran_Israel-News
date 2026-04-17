@@ -65,12 +65,29 @@ export async function generateSituationReport(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt }),
     });
-    if (!response.ok) throw new Error(`Report generation failed: ${response.statusText}`);
+
+    // Log response details for debugging (visible in browser console)
+    console.log(`🔍 Response status: ${response.status} ${response.statusText}`);
+    console.log(`🔍 Response ok? ${response.ok}`);
+
+    if (!response.ok) {
+      // Try to read error body
+      let errorBody = '';
+      try {
+        errorBody = await response.text();
+        console.error('❌ Error response body:', errorBody);
+      } catch (e) {
+        errorBody = 'Could not read error body';
+      }
+      throw new Error(`Report generation failed (HTTP ${response.status}): ${response.statusText || 'No status text'} - ${errorBody.substring(0, 200)}`);
+    }
+
     const data = await response.json();
+    console.log('✅ Report received, content length:', data.content?.length);
 
     // Extract impact score from content if possible (simple heuristic)
     let impactScore = 5;
-    if (data.content.includes('Risk Assessment') || data.content.includes('score')) {
+    if (data.content && (data.content.includes('Risk Assessment') || data.content.includes('score'))) {
       const match = data.content.match(/risk:?\s*(\d+)/i);
       if (match) impactScore = Math.min(10, parseInt(match[1]) || 5);
     }
@@ -86,9 +103,10 @@ export async function generateSituationReport(
     };
   } catch (error) {
     console.error('AI report generation error:', error);
+    // Return a fallback mock report so the UI doesn't break
     return {
       title: reportTitle,
-      content: `⚠️ AI service temporarily unavailable. Please try again later.\n\nBased on ${articles.length} articles, the key developments are: ${articles.slice(0, 3).map(a => a.title).join('; ')}`,
+      content: `⚠️ AI service temporarily unavailable. Please try again later.\n\nError details: ${error instanceof Error ? error.message : String(error)}\n\nBased on ${articles.length} articles, the key developments are: ${articles.slice(0, 3).map(a => a.title).join('; ')}`,
       type,
       source_article_ids: articles.map(a => a.id!).filter(Boolean),
       impact_score: 5,

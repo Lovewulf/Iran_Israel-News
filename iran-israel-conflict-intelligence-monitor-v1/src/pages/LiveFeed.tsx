@@ -131,3 +131,5 @@ export default function LiveFeed() {
     </div>
   );
 }
+
+export default LiveFeed;

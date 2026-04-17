@@ -73,7 +73,7 @@ app.post('/api/generate-report', async (req, res) => {
               { role: 'user', content: prompt },
             ],
             temperature: 0.5,
-            max_tokens: 1500,
+            max_tokens: 3000,
           }),
         });
 

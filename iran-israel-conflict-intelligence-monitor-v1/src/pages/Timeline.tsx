@@ -1,112 +1,58 @@
-import React, { useState, useEffect } from 'react';
-import { History, Activity, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { EventCluster, Article } from '../types';
-import { getEventClusters } from '../services/firestoreService';
+import { Calendar, Clock, ExternalLink, ChevronRight } from 'lucide-react';
+import { format } from 'date-fns';
 
-const formatDate = (dateValue: any) => {
-  if (!dateValue) return 'Unknown date';
-  try {
-    const d = new Date(dateValue);
-    return d.toLocaleDateString();
-  } catch {
-    return 'Invalid date';
-  }
-};
+interface TimelineArticle {
+  id: string;
+  title: string;
+  summary: string;
+  url: string;
+  source_name: string;
+  published_at: string;
+  image_url: string | null;
+}
 
-const TimelineEvent = ({ cluster, idx }: { cluster: EventCluster; idx: number }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [articles, setArticles] = useState<Article[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  const toggleExpand = async () => {
-    if (!isExpanded && articles.length === 0 && cluster.article_ids?.length) {
-      setLoading(true);
-      try {
-        const { data, error } = await supabase
-          .from('articles')
-          .select('*')
-          .in('id', cluster.article_ids);
-        if (error) throw error;
-        setArticles(data as Article[]);
-      } catch (error) {
-        console.error('Failed to fetch related articles:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
-    setIsExpanded(!isExpanded);
-  };
-
-  const severityColor = {
-    low: 'border-green-500 bg-green-50',
-    medium: 'border-yellow-500 bg-yellow-50',
-    high: 'border-orange-500 bg-orange-50',
-    critical: 'border-red-500 bg-red-50',
-  }[cluster.severity] || 'border-gray-500 bg-gray-50';
-
-  return (
-    <div className="relative pl-8 pb-8 border-l-2 border-gray-200 last:pb-0">
-      <div className={`absolute left-[-9px] top-0 w-4 h-4 rounded-full ${severityColor.split(' ')[0]} border-2 border-white`} />
-      <div className="mb-1 text-sm text-gray-500">
-        {formatDate(cluster.start_time)} – {formatDate(cluster.end_time)}
-      </div>
-      <h3 className="text-xl font-bold mb-2">{cluster.title}</h3>
-      <p className="text-gray-600 mb-3">{cluster.description}</p>
-      {cluster.primary_location && (
-        <div className="text-sm text-gray-500 mb-2">📍 {cluster.primary_location}</div>
-      )}
-      <button
-        onClick={toggleExpand}
-        className="flex items-center gap-1 text-sm text-blue-600 hover:underline"
-      >
-        {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-        {cluster.article_ids?.length || 0} related intelligence reports
-      </button>
-      {isExpanded && (
-        <div className="mt-3 space-y-2">
-          {loading ? (
-            <div className="flex justify-center py-2">
-              <Activity className="w-5 h-5 animate-spin text-blue-500" />
-            </div>
-          ) : articles.length > 0 ? (
-            articles.map((article) => (
-              <div key={article.id} className="bg-gray-50 p-3 rounded-lg">
-                <div className="flex justify-between items-start gap-2">
-                  <div>
-                    <h4 className="font-semibold">{article.title}</h4>
-                    <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
-                      <span>{article.source_name}</span>
-                      <span>•</span>
-                      <span>{formatDate(article.published_at)}</span>
-                    </div>
-                  </div>
-                  <a href={article.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm flex items-center gap-1">
-                    Source <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-              </div>
-            ))
-          ) : (
-            <p className="text-gray-500 text-sm">No detailed articles available.</p>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
+interface GroupedArticles {
+  date: string;
+  articles: TimelineArticle[];
+}
 
 export default function Timeline() {
-  const [clusters, setClusters] = useState<EventCluster[]>([]);
+  const [groups, setGroups] = useState<GroupedArticles[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchTimeline = async () => {
       try {
-        const data = await getEventClusters();
-        setClusters(data);
-      } catch (error) {
-        console.error('Failed to fetch timeline:', error);
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const { data, error } = await supabase
+          .from('articles')
+          .select('id, title, summary, url, source_name, published_at, image_url')
+          .gte('published_at', thirtyDaysAgo.toISOString())
+          .order('published_at', { ascending: false });
+        if (error) throw error;
+        if (!data) {
+          setGroups([]);
+          setLoading(false);
+          return;
+        }
+        // Group by date (YYYY-MM-DD)
+        const grouped: Record<string, TimelineArticle[]> = {};
+        data.forEach((article: TimelineArticle) => {
+          const dateKey = format(new Date(article.published_at), 'yyyy-MM-dd');
+          if (!grouped[dateKey]) grouped[dateKey] = [];
+          grouped[dateKey].push(article);
+        });
+        const sortedGroups = Object.entries(grouped)
+          .sort((a, b) => b[0].localeCompare(a[0]))
+          .map(([date, articles]) => ({ date, articles }));
+        setGroups(sortedGroups);
+      } catch (err) {
+        console.error('Timeline fetch error:', err);
+        setError('Failed to load timeline data');
       } finally {
         setLoading(false);
       }
@@ -117,38 +63,124 @@ export default function Timeline() {
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
-        <div className="text-center">
-          <Activity className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-2" />
-          <p className="text-gray-500">Loading strategic timeline...</p>
-        </div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
       </div>
     );
   }
 
-  if (clusters.length === 0) {
+  if (error) {
+    return (
+      <div className="text-center py-16 bg-red-50 rounded-lg">
+        <p className="text-red-600">{error}</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (groups.length === 0) {
     return (
       <div className="text-center py-16 bg-gray-50 rounded-lg">
-        <History className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-        <h3 className="text-xl font-semibold">No events yet</h3>
-        <p className="text-gray-500 mt-1">Major strategic events will appear here as they are identified.</p>
+        <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+        <h3 className="text-xl font-semibold text-gray-700">No events in the last 30 days</h3>
+        <p className="text-gray-500 mt-1">Check back later for updates.</p>
       </div>
     );
   }
 
   return (
-    <div className="container max-w-4xl mx-auto py-8 px-4">
-      <div className="flex items-center gap-2 mb-8">
-        <History className="w-8 h-8 text-blue-600" />
-        <div>
-          <h1 className="text-3xl font-bold">Conflict Timeline</h1>
-          <p className="text-gray-500 mt-1">Chronological reconstruction of major strategic events.</p>
-        </div>
+    <div className="max-w-4xl mx-auto px-4 py-8">
+      <div className="mb-8 text-center">
+        <h1 className="text-3xl font-extrabold text-gray-900">Conflict Timeline</h1>
+        <p className="text-gray-500 mt-1">Last 30 days • Chronological order</p>
       </div>
-      <div className="space-y-2">
-        {clusters.map((cluster, idx) => (
-          <TimelineEvent key={cluster.id} cluster={cluster} idx={idx} />
+
+      <div className="relative">
+        {/* Vertical line */}
+        <div className="absolute left-4 md:left-1/2 transform md:-translate-x-1/2 w-0.5 bg-gray-200 h-full"></div>
+
+        {groups.map((group, groupIdx) => (
+          <div key={group.date} className="mb-12 relative">
+            {/* Date marker */}
+            <div className="flex justify-center mb-6">
+              <div className="bg-indigo-600 text-white px-4 py-1 rounded-full text-sm font-medium shadow-md">
+                {format(new Date(group.date), 'MMMM d, yyyy')}
+              </div>
+            </div>
+
+            {/* Articles for this date */}
+            <div className="space-y-6">
+              {group.articles.map((article, idx) => {
+                const isEven = idx % 2 === 0;
+                return (
+                  <div
+                    key={article.id}
+                    className={`relative flex flex-col md:flex-row ${
+                      isEven ? 'md:flex-row-reverse' : ''
+                    } items-start gap-4 md:gap-8`}
+                  >
+                    {/* Timeline dot */}
+                    <div className="absolute left-4 md:left-1/2 transform md:-translate-x-1/2 w-4 h-4 rounded-full bg-indigo-600 border-4 border-white shadow-md z-10"></div>
+
+                    {/* Card */}
+                    <div className={`w-full md:w-5/12 ${isEven ? 'md:text-right' : ''} ml-8 md:ml-0`}>
+                      <a
+                        href={article.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block bg-white rounded-xl shadow-md hover:shadow-xl transition-shadow duration-200 overflow-hidden border border-gray-100"
+                      >
+                        {article.image_url && (
+                          <div className="h-40 overflow-hidden">
+                            <img
+                              src={article.image_url}
+                              alt=""
+                              className="w-full h-full object-cover"
+                              onError={(e) => (e.currentTarget.style.display = 'none')}
+                            />
+                          </div>
+                        )}
+                        <div className="p-4">
+                          <div className="flex items-center gap-2 text-xs text-gray-500 mb-2">
+                            <Clock className="w-3 h-3" />
+                            {format(new Date(article.published_at), 'h:mm a')}
+                            <span className="mx-1">•</span>
+                            <span className="font-medium text-indigo-600">{article.source_name}</span>
+                          </div>
+                          <h3 className="font-bold text-gray-900 mb-2 line-clamp-2">{article.title}</h3>
+                          <p className="text-gray-600 text-sm line-clamp-3">{article.summary || 'Click to read full article'}</p>
+                          <div className="mt-3 flex items-center gap-1 text-indigo-600 text-sm font-medium">
+                            Read more <ExternalLink className="w-3 h-3" />
+                          </div>
+                        </div>
+                      </a>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         ))}
       </div>
+
+      <style>{`
+        .line-clamp-2 {
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
+        .line-clamp-3 {
+          display: -webkit-box;
+          -webkit-line-clamp: 3;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
+      `}</style>
     </div>
   );
 }

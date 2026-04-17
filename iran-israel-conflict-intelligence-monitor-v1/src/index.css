@@ -10,7 +10,7 @@
   --color-card-foreground: #fafafa;
   --color-popover: #09090b;
   --color-popover-foreground: #fafafa;
-  --color-primary: #ef4444; /* Red for alert/intelligence feel */
+  --color-primary: #ef4444;
   --color-primary-foreground: #fafafa;
   --color-secondary: #27272a;
   --color-secondary-foreground: #fafafa;
@@ -29,8 +29,57 @@
   body {
     @apply bg-background text-foreground font-sans antialiased;
   }
+
+  /* Ensure all text has proper contrast on default dark background */
+  h1, h2, h3, h4, h5, h6, p, li, span {
+    @apply text-foreground;
+  }
 }
 
+/* ========== FIX FOR WHITE BACKGROUND CARDS (AI Reports, Dashboard cards) ========== */
+/* Any element with white background must have dark text */
+.bg-white,
+.bg-white *:not(button):not(a):not([class*="text-"]) {
+  color: #1f2937 !important;
+}
+
+/* Specifically for prose/Markdown content inside white backgrounds */
+.bg-white .prose p,
+.bg-white .prose li,
+.bg-white .prose span,
+.bg-white .prose strong,
+.bg-white .prose em,
+.bg-white .prose h1,
+.bg-white .prose h2,
+.bg-white .prose h3,
+.bg-white .prose h4,
+.bg-white .prose blockquote {
+  color: #374151 !important;
+}
+
+.bg-white .prose strong {
+  color: #111827 !important;
+}
+
+.bg-white .prose a {
+  color: #2563eb !important;
+}
+
+.bg-white .prose a:hover {
+  color: #1d4ed8 !important;
+}
+
+/* Card components from your UI (if they use bg-card with dark theme, keep as is) */
+.bg-card {
+  @apply bg-card text-card-foreground;
+}
+
+/* Override for any element that might be forcing white text */
+.text-muted-foreground {
+  @apply text-muted-foreground;
+}
+
+/* Keep dark theme for everything else */
 .intelligence-grid {
   background-image: radial-gradient(circle at 2px 2px, #1a1a1a 1px, transparent 0);
   background-size: 40px 40px;

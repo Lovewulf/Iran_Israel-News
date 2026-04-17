@@ -1,15 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Sparkles, Activity, ChevronRight, Calendar, ShieldCheck, AlertCircle, RefreshCw, Zap, TrendingUp, BarChart3, ShieldAlert } from 'lucide-react';
+import { FileText, Sparkles, Activity, ChevronRight, Calendar, ShieldCheck, RefreshCw, Zap, TrendingUp, ShieldAlert } from 'lucide-react';
 import { AIReport, Article } from '../types';
 import { getAIReports, getArticles, saveReport } from '../services/firestoreService';
 import { generateSituationReport } from '../services/aiService';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import Markdown from 'react-markdown';
-import { cn } from '../lib/utils';
 
-const ReportCard = ({ report, idx }: { report: AIReport, idx: number }) => {
+const formatDate = (dateValue: any) => {
+  if (!dateValue) return 'Unknown date';
+  try {
+    const d = new Date(dateValue);
+    return d.toLocaleString();
+  } catch {
+    return 'Invalid date';
+  }
+};
+
+const ReportCard = ({ report, idx }: { report: AIReport; idx: number }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -24,7 +32,7 @@ const ReportCard = ({ report, idx }: { report: AIReport, idx: number }) => {
               {report.type} Report
             </span>
             <span className="text-xs text-muted-foreground">
-              {report.generated_at.toDate().toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+              {formatDate(report.generated_at)}
             </span>
             {report.is_verified && (
               <span className="text-xs bg-green-500/10 text-green-500 px-2 py-1 rounded flex items-center gap-1">
@@ -45,16 +53,14 @@ const ReportCard = ({ report, idx }: { report: AIReport, idx: number }) => {
           </div>
           <div className="flex items-center gap-1">
             <FileText className="w-4 h-4 text-green-500" />
-            <span>Sources: <strong>{report.source_article_ids.length}</strong></span>
+            <span>Sources: <strong>{report.source_article_ids?.length || 0}</strong></span>
           </div>
         </div>
       </div>
-      
       <div className="p-5">
         <div className="prose prose-sm dark:prose-invert max-w-none">
           <Markdown>{report.content.slice(0, isExpanded ? undefined : 300)}{!isExpanded && report.content.length > 300 ? '...' : ''}</Markdown>
         </div>
-        
         <button
           onClick={() => setIsExpanded(!isExpanded)}
           className="mt-4 text-xs font-bold text-primary hover:underline flex items-center gap-1 uppercase tracking-wider"
@@ -90,7 +96,7 @@ export default function AIReports() {
     try {
       const articles = await getArticles(20);
       if (articles.length === 0) {
-        alert("No articles found for grounding. Ingest some data first.");
+        alert("No articles found. Ingest some data first.");
         return;
       }
       const newReport = await generateSituationReport(articles, type);
@@ -99,7 +105,7 @@ export default function AIReports() {
       setReports(updated);
     } catch (error) {
       console.error('Failed to generate report:', error);
-      alert("Failed to generate report. Check console for details.");
+      alert("Failed to generate report.");
     } finally {
       setGenerating(false);
     }
@@ -125,7 +131,7 @@ export default function AIReports() {
             AI Intelligence Reports
           </h1>
           <p className="text-muted-foreground mt-1">
-            Automated strategic reports synthesized by the Sentinel AI engine. Each assessment is cross-referenced with verified intelligence data.
+            Automated strategic reports synthesized by the Sentinel AI engine.
           </p>
         </div>
         <div className="flex gap-2">
@@ -147,14 +153,11 @@ export default function AIReports() {
           </button>
         </div>
       </div>
-
       {reports.length === 0 ? (
         <div className="text-center py-16 bg-muted/20 rounded-lg">
           <ShieldAlert className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
           <h3 className="text-xl font-semibold">No reports available</h3>
-          <p className="text-muted-foreground mt-1">
-            Click "Generate Assessment" to create your first intelligence report.
-          </p>
+          <p className="text-muted-foreground mt-1">Click "Generate Assessment" to create your first intelligence report.</p>
         </div>
       ) : (
         <div className="space-y-4">

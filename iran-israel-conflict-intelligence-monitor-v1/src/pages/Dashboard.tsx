@@ -3,8 +3,8 @@ import { getBreakingNews, getLatestArticles } from '../services/newsService';
 import type { Article } from '../types';
 import { Link } from 'react-router-dom';
 import { Calendar, ExternalLink, Zap } from 'lucide-react';
+import BreakingNewsTicker from '../components/BreakingNewsTicker';
 
-// Helper to format date safely
 const formatDate = (dateValue: any) => {
   if (!dateValue) return 'Recently';
   try {
@@ -15,7 +15,6 @@ const formatDate = (dateValue: any) => {
   }
 };
 
-// Helper to get source badge color
 const getSourceColor = (source: string) => {
   const colors: Record<string, string> = {
     'Reuters': 'bg-gray-700 text-white',
@@ -24,6 +23,9 @@ const getSourceColor = (source: string) => {
     'Times of Israel': 'bg-blue-800 text-white',
     'Jerusalem Post': 'bg-indigo-700 text-white',
     'AP News': 'bg-yellow-700 text-white',
+    'CNN': 'bg-red-800 text-white',
+    'Dawn (Pakistan)': 'bg-teal-700 text-white',
+    'Geo News (Pakistan)': 'bg-orange-700 text-white',
   };
   return colors[source] || 'bg-gray-500 text-white';
 };
@@ -41,7 +43,7 @@ export default function Dashboard() {
         setError(null);
         const [breakingData, recentData] = await Promise.all([
           getBreakingNews(),
-          getLatestArticles(12) // fetch more for grid
+          getLatestArticles(12)
         ]);
         setBreaking(breakingData);
         setRecent(recentData);
@@ -80,19 +82,21 @@ export default function Dashboard() {
     );
   }
 
-  // Hero article = most recent (first in 'recent' array)
   const heroArticle = recent.length > 0 ? recent[0] : null;
   const restArticles = recent.slice(1);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-12">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       {/* Header */}
       <div className="border-b border-gray-200 pb-4">
         <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">Iran–Israel Conflict Monitor</h1>
         <p className="text-gray-600 mt-2 text-lg">Real‑time intelligence & news from global sources</p>
       </div>
 
-      {/* Breaking News Bar (if any) */}
+      {/* Breaking News Ticker (24 hours) */}
+      <BreakingNewsTicker />
+
+      {/* Breaking News Bar (if any - fallback) */}
       {breaking.length > 0 && (
         <div className="bg-red-50 border-l-4 border-red-600 p-4 rounded-r-lg shadow-sm">
           <div className="flex items-center gap-2">
@@ -106,7 +110,7 @@ export default function Dashboard() {
                 href={article.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="block hover:underline"
+                className="block hover:underline text-gray-800"
               >
                 <span className="font-semibold">{article.title}</span>
                 <span className="text-sm text-gray-500 ml-2">– {article.source_name}</span>
@@ -116,7 +120,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Hero Section (Latest Top Story) */}
+      {/* Hero Section */}
       {heroArticle && (
         <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100">
           <div className="md:flex">
@@ -202,11 +206,11 @@ export default function Dashboard() {
                     <span className="text-xs text-gray-400">{formatDate(article.published_at)}</span>
                   </div>
                   <h3 className="font-bold text-lg mb-2 line-clamp-2">
-                    <a href={article.url} target="_blank" rel="noopener noreferrer" className="hover:text-blue-600">
+                    <a href={article.url} target="_blank" rel="noopener noreferrer" className="hover:text-blue-600 text-gray-900">
                       {article.title}
                     </a>
                   </h3>
-                  <p className="text-gray-500 text-sm line-clamp-3 mb-4">
+                  <p className="text-gray-600 text-sm line-clamp-3 mb-4">
                     {article.summary || article.content?.slice(0, 120)}...
                   </p>
                   <div className="mt-auto">
@@ -214,7 +218,7 @@ export default function Dashboard() {
                       href={article.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-blue-500 text-sm font-medium hover:underline inline-flex items-center gap-1"
+                      className="text-blue-600 text-sm font-medium hover:underline inline-flex items-center gap-1"
                     >
                       Read more <ExternalLink className="w-3 h-3" />
                     </a>

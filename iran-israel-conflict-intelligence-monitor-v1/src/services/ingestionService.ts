@@ -2,15 +2,18 @@ import { createClient } from '@supabase/supabase-js';
 import axios from 'axios';
 import Parser from 'rss-parser';
 
-// Supabase client setup
+// ========== Supabase Client Setup ==========
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!supabaseUrl || !supabaseServiceKey) {
-  throw new Error('Missing Supabase environment variables');
+  throw new Error('Missing Supabase environment variables. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
 }
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// User-Agent rotation
+// ========== Configuration ==========
+const MAX_ARTICLE_AGE_HOURS = parseInt(process.env.MAX_ARTICLE_AGE_HOURS || '48', 10);
+
+// ========== User-Agent Rotation (avoid blocking) ==========
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -20,11 +23,13 @@ const USER_AGENTS = [
 ];
 const getRandomUserAgent = () => USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 
+// ========== RSS Parser ==========
 const parser = new Parser({
   timeout: 15000,
   headers: { 'User-Agent': getRandomUserAgent() },
 });
 
+// ========== Helper: Fetch RSS with retries ==========
 async function fetchFeedWithRetry(url: string, maxRetries = 2): Promise<any> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -44,6 +49,7 @@ async function fetchFeedWithRetry(url: string, maxRetries = 2): Promise<any> {
   throw lastError;
 }
 
+// ========== Helper: Extract image URL ==========
 async function extractImageUrl(item: any, link: string): Promise<string> {
   if (item.enclosure?.url) return item.enclosure.url;
   if (item['media:content']?.['$']?.url) return item['media:content']['$'].url;
@@ -61,7 +67,22 @@ async function extractImageUrl(item: any, link: string): Promise<string> {
   return '';
 }
 
-async function processFeed(sourceName: string, feedUrl: string, maxItems = 6): Promise<number> {
+// ========== Helper: Check if article is recent ==========
+function isRecentArticle(pubDate: string | Date | undefined, maxAgeHours: number): boolean {
+  if (!pubDate) return false;
+  try {
+    const articleDate = new Date(pubDate);
+    if (isNaN(articleDate.getTime())) return false;
+    const now = new Date();
+    const diffHours = (now.getTime() - articleDate.getTime()) / (1000 * 60 * 60);
+    return diffHours <= maxAgeHours;
+  } catch {
+    return false;
+  }
+}
+
+// ========== Helper: Process a single feed ==========
+async function processFeed(sourceName: string, feedUrl: string, maxItems = 8): Promise<number> {
   let addedCount = 0;
   try {
     console.log(`🔍 Processing ${sourceName} from: ${feedUrl}`);
@@ -73,15 +94,26 @@ async function processFeed(sourceName: string, feedUrl: string, maxItems = 6): P
     }
     for (const item of items) {
       if (!item.link) continue;
+
+      // Date filter: skip articles older than MAX_ARTICLE_AGE_HOURS
+      const pubDate = item.isoDate || item.pubDate;
+      if (!isRecentArticle(pubDate, MAX_ARTICLE_AGE_HOURS)) {
+        console.log(`⏭️ Skipping old article: ${item.title?.substring(0, 50)} (${pubDate})`);
+        continue;
+      }
+
+      // Avoid duplicates
       const { data: existing } = await supabase.from('articles').select('url').eq('url', item.link);
       if (existing && existing.length > 0) continue;
+
       const imageUrl = await extractImageUrl(item, item.link);
       const title = item.title?.trim() || 'No title';
       const content = item.content || item.contentSnippet || '';
       const summary = item.contentSnippet || content.slice(0, 300);
-      const publishedAt = item.isoDate ? new Date(item.isoDate).toISOString() : new Date().toISOString();
+      const publishedAt = pubDate ? new Date(pubDate).toISOString() : new Date().toISOString();
       const now = new Date().toISOString();
       const fingerprint = Buffer.from(`${item.link}${title}`).toString('base64');
+
       const article = {
         title,
         content,
@@ -100,6 +132,7 @@ async function processFeed(sourceName: string, feedUrl: string, maxItems = 6): P
         content_origin: 'live_rss',
         is_verified: false,
       };
+
       const { error } = await supabase.from('articles').insert(article);
       if (error) {
         console.error(`Insert error for ${title}:`, error.message);
@@ -115,8 +148,9 @@ async function processFeed(sourceName: string, feedUrl: string, maxItems = 6): P
   return addedCount;
 }
 
+// ========== Main Ingestion Function ==========
 export async function runFullIngestion() {
-  console.log('📡 Starting full news ingestion with fallbacks...');
+  console.log(`📡 Starting full news ingestion (keeping articles younger than ${MAX_ARTICLE_AGE_HOURS} hours)...`);
   let totalAdded = 0;
 
   const feedGroups = [
@@ -126,6 +160,7 @@ export async function runFullIngestion() {
         'https://news.google.com/rss/search?q=iran&hl=en-US&gl=US&ceid=US:en',
         'https://rss.nytimes.com/services/xml/rss/nyt/Iran.xml',
         'https://feeds.bbci.co.uk/news/world/middle_east/iran/rss.xml',
+        'https://www.aljazeera.com/xml/rss/iran.xml',
       ],
     },
     {
@@ -208,7 +243,7 @@ export async function runFullIngestion() {
         success = true;
         console.log(`✅ Successfully ingested from ${group.name} via ${feedUrl}`);
       } else {
-        console.log(`⚠️ No items from ${feedUrl} for ${group.name}, trying fallback...`);
+        console.log(`⚠️ No recent items from ${feedUrl} for ${group.name}, trying fallback...`);
       }
     }
     if (!success) console.error(`❌ All feeds failed for group: ${group.name}`);

@@ -14,8 +14,8 @@ const port = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// Serve static files from the React build (Vite dist)
-app.use(express.static(path.join(__dirname, 'dist')));
+// ✅ Serve static files from the same directory where server.js lives (which is dist/)
+app.use(express.static(__dirname));
 
 // Gemini AI endpoint
 app.post('/api/generate-report', async (req, res) => {
@@ -70,9 +70,9 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Catch-all: serve React app
+// ✅ Catch-all: serve index.html from the same directory
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 app.listen(port, () => {

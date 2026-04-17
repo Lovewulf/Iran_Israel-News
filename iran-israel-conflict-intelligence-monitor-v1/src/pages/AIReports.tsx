@@ -3,7 +3,7 @@ import { FileText, Sparkles, Activity, ChevronRight, Calendar, ShieldCheck, Refr
 import { AIReport, Article } from '../types';
 import { getAIReports, getArticles, saveReport, deleteAllReports } from '../services/firestoreService';
 import { generateSituationReport } from '../services/aiService';
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import Markdown from 'react-markdown';
 
 const formatDate = (dateValue: any) => {

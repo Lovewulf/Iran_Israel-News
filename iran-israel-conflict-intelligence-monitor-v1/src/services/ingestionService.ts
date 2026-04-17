@@ -2,16 +2,17 @@ import { createClient } from '@supabase/supabase-js';
 import axios from 'axios';
 import Parser from 'rss-parser';
 
+// Validate environment variables
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl || !supabaseServiceKey) {
-  throw new Error('Missing Supabase environment variables');
+  throw new Error('Missing Supabase environment variables. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
 }
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// Custom parser with longer timeout and custom headers
+// Fixed: Pass all options directly to the Parser constructor
 const parser = new Parser({
   timeout: 10000,
   headers: {
@@ -25,7 +26,7 @@ const NEWS_SOURCES = [
   { name: 'Reuters - Israel', url: 'https://www.reuters.com/world/middle-east/israel/feed/', category: 'news' },
   { name: 'BBC - Middle East', url: 'http://feeds.bbci.co.uk/news/world/middle_east/rss.xml', category: 'news' },
   { name: 'Al Jazeera - Iran', url: 'https://www.aljazeera.com/xml/rss/iran.xml', category: 'news' },
-  { name: 'Al Jazeera - Israel-Palestine', url: 'https://www.aljazeera.com/xml/rss/palestine.xml', category: 'news' },
+  { name: 'Al Jazeera - Palestine', url: 'https://www.aljazeera.com/xml/rss/palestine.xml', category: 'news' },
   { name: 'Times of Israel', url: 'https://www.timesofisrael.com/feed/', category: 'news' },
   { name: 'Jerusalem Post - Breaking', url: 'https://www.jpost.com/breaking-news/feed', category: 'news' },
   { name: 'Jerusalem Post - Iran', url: 'https://www.jpost.com/iran/feed', category: 'news' },
@@ -46,7 +47,9 @@ async function extractImageUrl(item: any, link: string): Promise<string> {
       const response = await axios.get(link, { timeout: 8000, headers: { 'User-Agent': parser.options.headers['User-Agent'] } });
       const ogMatch = response.data.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/);
       if (ogMatch) return ogMatch[1];
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+      // ignore – image extraction is optional
+    }
   }
   return '';
 }
@@ -61,11 +64,10 @@ export async function runFullIngestion() {
     try {
       console.log(`🔍 Fetching from ${source.name} (${source.url})...`);
       const feed = await parser.parseURL(source.url);
-      let itemsProcessed = 0;
       
-      for (const item of feed.items.slice(0, 8)) { // limit per source
+      for (const item of feed.items.slice(0, 8)) {
         if (!item.link) continue;
-        
+
         // Check duplicate
         const { data: existing } = await supabase.from('articles').select('url').eq('url', item.link);
         if (existing?.length) continue;
@@ -75,7 +77,7 @@ export async function runFullIngestion() {
         const publishedAt = item.isoDate ? new Date(item.isoDate).toISOString() : new Date().toISOString();
         const now = new Date().toISOString();
         const fingerprint = Buffer.from(`${item.link}${title}`).toString('base64');
-        
+
         const article = {
           title,
           content: item.content || item.contentSnippet || '',
@@ -107,7 +109,7 @@ export async function runFullIngestion() {
       results.push({ source: source.name, success: false, count: 0, error: err.message });
     }
   }
-  
+
   console.log(`🏁 Ingestion finished. Total new articles: ${totalAdded}`);
   console.table(results);
   return { totalAdded, details: results };

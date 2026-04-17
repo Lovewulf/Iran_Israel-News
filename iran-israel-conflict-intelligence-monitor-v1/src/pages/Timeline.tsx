@@ -37,7 +37,11 @@ const TimelineEvent = ({ cluster, idx }: { cluster: EventCluster, idx: number })
   // ... (rest of your component logic remains the same)
   // Ensure all Firebase references are removed
 
-  return ( ... );
+  return ( 
+    <div className="relative pl-8 pb-8 border-l-2 border-border last:pb-0">
+      {/* ... your component's JSX ... */}
+    </div>
+  );
 };
 
 // 👇 This is the main Timeline component with default export
@@ -59,5 +63,9 @@ export default function Timeline() {
     fetchTimeline();
   }, []);
 
-  return ( ... );
+  return ( 
+    <div className="container max-w-4xl mx-auto py-8 px-4">
+      {/* ... your component's JSX ... */}
+    </div>
+  );
 }

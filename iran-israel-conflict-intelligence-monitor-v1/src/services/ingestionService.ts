@@ -1,11 +1,12 @@
-import { getAdminDbSafe } from '../firebase-admin';
-import { collection, addDoc, query, where, getDocs, Timestamp } from 'firebase-admin/firestore';
+import { createClient } from '@supabase/supabase-js';
 import axios from 'axios';
 import Parser from 'rss-parser';
 
+const supabaseUrl = process.env.SUPABASE_URL!;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const parser = new Parser();
 
-// List of real RSS feeds for Iran-Israel conflict
 const NEWS_SOURCES = [
   { name: 'Reuters - Iran', url: 'https://www.reuters.com/world/middle-east/iran/feed/', category: 'news' },
   { name: 'BBC - Middle East', url: 'http://feeds.bbci.co.uk/news/world/middle_east/rss.xml', category: 'news' },
@@ -15,7 +16,6 @@ const NEWS_SOURCES = [
   { name: 'AP News - Iran', url: 'https://apnews.com/hub/iran?format=rss', category: 'news' }
 ];
 
-// Helper to extract image URL from item
 async function extractImageUrl(item: any, link: string): Promise<string> {
   if (item.enclosure?.url) return item.enclosure.url;
   if (item.content) {
@@ -27,20 +27,12 @@ async function extractImageUrl(item: any, link: string): Promise<string> {
       const response = await axios.get(link, { timeout: 5000 });
       const ogMatch = response.data.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/);
       if (ogMatch) return ogMatch[1];
-    } catch (e) {
-      // ignore fetch errors
-    }
+    } catch (e) {}
   }
   return '';
 }
 
 export async function runFullIngestion() {
-  const db = getAdminDbSafe();
-  if (!db) {
-    console.error('❌ Firebase Admin not initialized. Cannot run ingestion.');
-    throw new Error('Firebase Admin not configured');
-  }
-
   console.log('📡 Starting news ingestion...');
   let totalAdded = 0;
 
@@ -50,10 +42,8 @@ export async function runFullIngestion() {
       const feed = await parser.parseURL(source.url);
       
       for (const item of feed.items.slice(0, 10)) {
-        // Check for duplicate by link
-        const existingQuery = query(collection(db, 'articles'), where('url', '==', item.link));
-        const existing = await getDocs(existingQuery);
-        if (!existing.empty) continue;
+        const { data: existing } = await supabase.from('articles').select('url').eq('url', item.link);
+        if (existing?.length) continue;
 
         const imageUrl = await extractImageUrl(item, item.link);
         
@@ -64,10 +54,10 @@ export async function runFullIngestion() {
           url: item.link,
           source_name: source.name,
           source_type: 'rss',
-          published_at: item.isoDate ? new Date(item.isoDate) : Timestamp.now(),
-          ingested_at: Timestamp.now(),
-          first_seen_at: Timestamp.now(),
-          last_updated_at: Timestamp.now(),
+          published_at: item.isoDate ? new Date(item.isoDate) : new Date(),
+          ingested_at: new Date(),
+          first_seen_at: new Date(),
+          last_updated_at: new Date(),
           fingerprint: Buffer.from(item.link + item.title).toString('base64'),
           tag_ids: [],
           image_url: imageUrl,
@@ -76,7 +66,8 @@ export async function runFullIngestion() {
           is_verified: false
         };
 
-        await addDoc(collection(db, 'articles'), article);
+        const { error } = await supabase.from('articles').insert(article);
+        if (error) throw error;
         totalAdded++;
         console.log(`✅ Added: ${article.title}`);
       }

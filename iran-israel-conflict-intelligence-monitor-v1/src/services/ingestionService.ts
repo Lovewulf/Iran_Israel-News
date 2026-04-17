@@ -12,12 +12,13 @@ if (!supabaseUrl || !supabaseServiceKey) {
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// Fixed: Pass all options directly to the Parser constructor
+// Define user-agent constant for reuse
+const USER_AGENT = 'Mozilla/5.0 (compatible; IranIsraelMonitor/1.0; +https://iran-israel-news.onrender.com)';
+
+// Pass options directly to Parser constructor
 const parser = new Parser({
   timeout: 10000,
-  headers: {
-    'User-Agent': 'Mozilla/5.0 (compatible; IranIsraelMonitor/1.0; +https://iran-israel-news.onrender.com)'
-  }
+  headers: { 'User-Agent': USER_AGENT }
 });
 
 // Expanded list of relevant RSS feeds (Iran-Israel conflict focused)
@@ -44,7 +45,10 @@ async function extractImageUrl(item: any, link: string): Promise<string> {
   }
   if (link) {
     try {
-      const response = await axios.get(link, { timeout: 8000, headers: { 'User-Agent': parser.options.headers['User-Agent'] } });
+      const response = await axios.get(link, { 
+        timeout: 8000, 
+        headers: { 'User-Agent': USER_AGENT } // Use constant instead of parser.options
+      });
       const ogMatch = response.data.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/);
       if (ogMatch) return ogMatch[1];
     } catch (e) {

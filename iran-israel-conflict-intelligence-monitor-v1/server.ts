@@ -3,7 +3,6 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { runFullIngestion } from './src/services/ingestionService.js';
-import Groq from 'groq-sdk';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,15 +14,13 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(__dirname));
 
-// ========== Groq AI Endpoint ==========
+// ========== OpenRouter AI Endpoint ==========
 app.post('/api/generate-report', async (req, res) => {
-  const groqApiKey = process.env.GROQ_API_KEY;
-  if (!groqApiKey) {
-    console.error('❌ GROQ_API_KEY is not set');
-    return res.status(500).json({ error: 'GROQ_API_KEY not configured' });
+  const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+  if (!openRouterApiKey) {
+    console.error('❌ OPENROUTER_API_KEY is not set');
+    return res.status(500).json({ error: 'OpenRouter API key not configured.' });
   }
-
-  const groq = new Groq({ apiKey: groqApiKey });
 
   try {
     let { prompt } = req.body;
@@ -31,41 +28,53 @@ app.post('/api/generate-report', async (req, res) => {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
-    // Truncate prompt to avoid token limits
+    // Truncate prompt to 4000 chars to avoid token limits (adjust as needed)
     if (prompt.length > 4000) {
-      console.log(`⚠️ Prompt too long (${prompt.length} chars), truncating to 4000`);
+      console.log(`⚠️ Prompt truncated from ${prompt.length} to 4000 chars`);
       prompt = prompt.substring(0, 4000);
     }
 
-    console.log(`🤖 Generating report (prompt length: ${prompt.length})...`);
-    const chatCompletion = await groq.chat.completions.create({
-      messages: [
-        { role: 'system', content: 'You are an expert geopolitical intelligence analyst.' },
-        { role: 'user', content: prompt },
-      ],
-      model: 'llama-3.3-70b-versatile',
-      temperature: 0.5,
-      max_tokens: 1500,
+    console.log(`🤖 Generating report with OpenRouter (prompt length: ${prompt.length})...`);
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openRouterApiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://iran-israel-news.onrender.com', // Replace with your app's URL
+        'X-Title': 'Iran-Israel Conflict Monitor',
+      },
+      body: JSON.stringify({
+        model: 'meta-llama/llama-3.3-70b-instruct:free', // Free model (generous limits)
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an expert geopolitical intelligence analyst. Provide concise, factual, and structured reports based on the news provided.'
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.5,
+        max_tokens: 1500,
+      }),
     });
 
-    const text = chatCompletion.choices[0]?.message?.content || '';
-    if (!text) throw new Error('Empty response from Groq');
+    if (!response.ok) {
+      const errorData = await response.text();
+      console.error(`❌ OpenRouter API error (${response.status}):`, errorData);
+      return res.status(response.status).json({ error: `OpenRouter API error: ${response.statusText}` });
+    }
 
-    console.log('✅ Report generated');
+    const data = await response.json();
+    const text = data.choices[0]?.message?.content || '';
+    if (!text) throw new Error('Empty response from OpenRouter');
+
+    console.log('✅ AI report generated successfully');
     res.json({ content: text });
   } catch (error) {
-    console.error('❌ Groq API error:', error);
-    // Safe error message extraction – works with any error type
-    let errorMessage = 'Unknown error';
-    if (error instanceof Error) {
-      errorMessage = error.message;
-    } else if (typeof error === 'string') {
-      errorMessage = error;
-    } else if (error && typeof error === 'object') {
-      // Try to get message property if it exists
-      const maybeMessage = (error as any).message;
-      if (typeof maybeMessage === 'string') errorMessage = maybeMessage;
-    }
+    console.error('❌ Error generating report:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ error: errorMessage });
   }
 });
@@ -78,12 +87,7 @@ app.post('/api/ingest', async (req, res) => {
     res.json({ success: true, totalAdded: result.totalAdded });
   } catch (error) {
     console.error('❌ Ingestion failed:', error);
-    let errorMessage = 'Unknown error';
-    if (error instanceof Error) errorMessage = error.message;
-    else if (typeof error === 'string') errorMessage = error;
-    else if (error && typeof error === 'object' && 'message' in error && typeof (error as any).message === 'string') {
-      errorMessage = (error as any).message;
-    }
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ success: false, error: errorMessage });
   }
 });

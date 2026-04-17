@@ -10,17 +10,18 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const port = process.env.PORT || 3001;
 
+// Global middleware
 app.use(cors());
 app.use(express.json());
 
-// ========== API Routes (must come before static file serving) ==========
+// ========== API Routes (must be defined before static file serving) ==========
 
-// Test endpoint to verify server is alive
+// Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// OpenRouter AI Endpoint
+// OpenRouter AI endpoint
 app.post('/api/generate-report', async (req, res) => {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -34,6 +35,7 @@ app.post('/api/generate-report', async (req, res) => {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
+    // Truncate prompt to avoid token limits
     if (prompt.length > 4000) {
       console.log(`⚠️ Prompt truncated from ${prompt.length} to 4000 chars`);
       prompt = prompt.substring(0, 4000);
@@ -81,10 +83,10 @@ app.post('/api/generate-report', async (req, res) => {
   }
 });
 
-// Ingestion endpoint
+// Manual ingestion endpoint
 app.post('/api/ingest', async (req, res) => {
   try {
-    console.log('🔄 Manual ingestion');
+    console.log('🔄 Manual ingestion triggered');
     const result = await runFullIngestion();
     res.json({ success: true, totalAdded: result.totalAdded });
   } catch (error) {
@@ -94,29 +96,40 @@ app.post('/api/ingest', async (req, res) => {
   }
 });
 
-// ========== Serve static frontend files (catch-all after API routes) ==========
-app.use(express.static(__dirname));
+// ========== Serve Static Frontend Files (after API routes) ==========
+// Serve the built React app from the 'dist' directory
+app.use(express.static(path.join(__dirname, 'dist')));
 
-// For any other route, serve index.html (client-side routing)
+// Catch-all route for client-side routing (must be last)
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-// ========== Scheduled ingestion ==========
+// ========== Scheduled Background Tasks ==========
 (async () => {
-  console.log('🚀 Initial ingestion...');
+  console.log('🚀 Running initial ingestion on server start...');
   try {
     const result = await runFullIngestion();
-    console.log(`✅ Added ${result.totalAdded} articles.`);
-  } catch (err) { console.error('❌ Initial ingestion failed'); }
+    console.log(`✅ Initial ingestion added ${result.totalAdded} articles.`);
+  } catch (err) {
+    console.error('❌ Initial ingestion failed:', err);
+  }
 })();
 
 setInterval(async () => {
-  console.log('⏰ Scheduled ingestion...');
+  console.log('⏰ Scheduled ingestion running...');
   try {
     const result = await runFullIngestion();
-    console.log(`✅ Added ${result.totalAdded} articles.`);
-  } catch (err) { console.error('❌ Scheduled ingestion failed'); }
-}, 15 * 60 * 1000);
+    console.log(`✅ Scheduled ingestion added ${result.totalAdded} new articles.`);
+  } catch (err) {
+    console.error('❌ Scheduled ingestion failed:', err);
+  }
+}, 15 * 60 * 1000); // every 15 minutes
 
-app.listen(port, () => console.log(`✅ Server running on port ${port}`));
+// Start the server
+app.listen(port, () => {
+  console.log(`✅ Server running on port ${port}`);
+  console.log(`📍 Health: http://localhost:${port}/api/health`);
+  console.log(`📍 AI reports: POST http://localhost:${port}/api/generate-report`);
+  console.log(`📍 Ingestion: POST http://localhost:${port}/api/ingest`);
+});

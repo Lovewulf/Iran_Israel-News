@@ -121,7 +121,7 @@ export default function AIReports() {
     setGenerating(true);
     setGeneratingType(type);
     try {
-      const articles = await getArticles(30);
+      const articles = await getArticles(50);
       if (articles.length === 0) {
         alert("No articles found. Ingest some data first.");
         return;

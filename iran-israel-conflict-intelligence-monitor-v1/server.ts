@@ -13,12 +13,22 @@ const port = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+// Helper to safely get error message
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return 'Unknown error';
+  }
+}
+
 // ========== API Routes ==========
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// OpenRouter AI endpoint with fallback models
 app.post('/api/generate-report', async (req, res) => {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -37,15 +47,14 @@ app.post('/api/generate-report', async (req, res) => {
       prompt = prompt.substring(0, 4000);
     }
 
-    // List of free models to try (in order of preference)
     const modelsToTry = [
-      'meta-llama/llama-3.2-3b-instruct:free',  // Lightweight, fast, free
-      'microsoft/phi-3-mini-128k-instruct:free', // Good for analysis
-      'mistralai/mistral-7b-instruct:free',      // Capable 7B model
-      'openrouter/free',                         // Auto‑selects best free model
+      'meta-llama/llama-3.2-3b-instruct:free',
+      'microsoft/phi-3-mini-128k-instruct:free',
+      'mistralai/mistral-7b-instruct:free',
+      'openrouter/free',
     ];
 
-    let lastError = null;
+    let lastError: unknown = null;
     for (const model of modelsToTry) {
       try {
         console.log(`🤖 Trying model: ${model}...`);
@@ -80,22 +89,19 @@ app.post('/api/generate-report', async (req, res) => {
         } else {
           const errorText = await response.text();
           console.warn(`⚠️ Model ${model} failed with ${response.status}: ${errorText.substring(0, 200)}`);
-          lastError = { status: response.status, error: errorText };
+          lastError = new Error(`HTTP ${response.status}: ${errorText.substring(0, 100)}`);
         }
       } catch (err) {
-        console.warn(`⚠️ Model ${model} threw error:`, err.message);
+        console.warn(`⚠️ Model ${model} threw error:`, getErrorMessage(err));
         lastError = err;
       }
     }
 
-    // If all models fail
     console.error('❌ All models failed');
-    const errorMessage = lastError?.message || 'All AI models unavailable';
-    return res.status(500).json({ error: errorMessage });
+    return res.status(500).json({ error: getErrorMessage(lastError) || 'All AI models unavailable' });
   } catch (error) {
     console.error('❌ Unexpected error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({ error: errorMessage });
+    return res.status(500).json({ error: getErrorMessage(error) });
   }
 });
 
@@ -106,8 +112,7 @@ app.post('/api/ingest', async (req, res) => {
     res.json({ success: true, totalAdded: result.totalAdded });
   } catch (error) {
     console.error('❌ Ingestion failed:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({ success: false, error: errorMessage });
+    res.status(500).json({ success: false, error: getErrorMessage(error) });
   }
 });
 
@@ -124,7 +129,9 @@ app.get('*', (req, res) => {
   try {
     const result = await runFullIngestion();
     console.log(`✅ Added ${result.totalAdded} articles.`);
-  } catch (err) { console.error('❌ Initial ingestion failed'); }
+  } catch (err) {
+    console.error('❌ Initial ingestion failed:', getErrorMessage(err));
+  }
 })();
 
 setInterval(async () => {
@@ -132,7 +139,9 @@ setInterval(async () => {
   try {
     const result = await runFullIngestion();
     console.log(`✅ Added ${result.totalAdded} articles.`);
-  } catch (err) { console.error('❌ Scheduled ingestion failed'); }
+  } catch (err) {
+    console.error('❌ Scheduled ingestion failed:', getErrorMessage(err));
+  }
 }, 15 * 60 * 1000);
 
 app.listen(port, () => console.log(`✅ Server running on port ${port}`));

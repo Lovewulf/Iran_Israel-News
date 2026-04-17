@@ -1,7 +1,5 @@
 import { useEffect, useState } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
-import { onAuthStateChanged } from "firebase/auth";
-import { auth, signInWithGoogle, getAuthSafe } from "./firebase";
 import { Layout } from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
 import LiveFeed from "./pages/LiveFeed";
@@ -11,29 +9,21 @@ import Sources from "./pages/Sources";
 import EventClusterDetails from "./pages/EventClusterDetails";
 import { Diagnostics } from "./components/Diagnostics";
 import { ShieldAlert, LogIn, Activity } from "lucide-react";
-import { firebaseClientStatus } from "./config/env";
-import { seedInitialData } from "./services/seedService";
+import { signInWithGoogle, onAuthStateChange, getCurrentUser } from "./services/authService";
+import { supabase } from "./lib/supabaseClient";
 
 // ========== Protected Route Component ==========
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const authSafe = getAuthSafe();
 
   useEffect(() => {
-    if (!authSafe) {
+    const { data: { subscription } } = onAuthStateChange((user) => {
+      setUser(user);
       setLoading(false);
-      return;
-    }
-    const unsubscribe = onAuthStateChanged(authSafe, (u) => {
-      setUser(u);
-      setLoading(false);
-      if (u) {
-        seedInitialData();
-      }
     });
-    return () => unsubscribe();
-  }, [authSafe]);
+    return () => subscription?.unsubscribe();
+  }, []);
 
   if (loading) {
     return (
@@ -57,13 +47,12 @@ const LoginPage = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!auth) return;
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const { data: { subscription } } = onAuthStateChange((user) => {
       if (user) {
         navigate("/", { replace: true });
       }
     });
-    return () => unsubscribe();
+    return () => subscription?.unsubscribe();
   }, [navigate]);
 
   const handleLogin = async () => {
@@ -71,10 +60,9 @@ const LoginPage = () => {
     setError(null);
     try {
       await signInWithGoogle();
-      navigate("/", { replace: true });
+      // No need to navigate - the auth state change will redirect
     } catch (err: any) {
       setError(err?.message || "Login failed");
-    } finally {
       setLoading(false);
     }
   };
@@ -126,19 +114,8 @@ const ConfigRequiredPage = () => (
         </div>
         <h1 className="text-4xl font-bold tracking-tight">Configuration Required</h1>
         <p className="text-muted-foreground leading-relaxed">
-          Firebase environment variables are missing. Please configure your project in the settings menu.
+          Supabase environment variables are missing. Please configure your project.
         </p>
-      </div>
-      <div className="p-6 bg-muted/30 rounded-xl border text-left space-y-3">
-        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Missing Variables:</p>
-        <ul className="text-xs font-mono space-y-1">
-          {firebaseClientStatus.missing.map(v => (
-            <li key={v} className="text-destructive flex items-center gap-2">
-              <span className="w-1 h-1 bg-destructive rounded-full" />
-              {v}
-            </li>
-          ))}
-        </ul>
       </div>
       <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium">
         Contact System Administrator for Access
@@ -152,7 +129,10 @@ export default function App() {
   const location = useLocation();
   const isDiagnostics = location.pathname === '/diagnostics';
 
-  if (!firebaseClientStatus.isValid && !isDiagnostics) {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+  if ((!supabaseUrl || !supabaseKey) && !isDiagnostics) {
     return <ConfigRequiredPage />;
   }
 

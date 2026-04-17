@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { FileText, Sparkles, Activity, ChevronRight, Calendar, ShieldCheck, AlertCircle, RefreshCw, Zap, TrendingUp, BarChart3, ShieldAlert } from 'lucide-react';
 import { AIReport, Article } from '../types';
-import { getAIReports, getArticles } from '../services/firestoreService';
-import { generateSituationReport, saveReport } from '../services/aiService';
+import { getAIReports, getArticles, saveReport } from '../services/firestoreService';
+import { generateSituationReport } from '../services/aiService';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import { cn } from '../lib/utils';
@@ -66,7 +66,6 @@ const ReportCard = ({ report, idx }: { report: AIReport, idx: number }) => {
   );
 };
 
-// 👇 KEY CHANGE: Default export instead of named export
 export default function AIReports() {
   const [reports, setReports] = useState<AIReport[]>([]);
   const [loading, setLoading] = useState(true);

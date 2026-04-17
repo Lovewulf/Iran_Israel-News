@@ -5,23 +5,20 @@ import { fileURLToPath } from 'url';
 import { runFullIngestion } from './src/services/ingestionService.js';
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename); // this is the 'dist' folder
+const __dirname = path.dirname(__filename); // points to the 'dist' folder where server.js lives
 
 const app = express();
 const port = process.env.PORT || 3001;
 
-// Global middleware
+// 1. Global middleware
 app.use(cors());
 app.use(express.json());
 
-// ========== API Routes (must be defined before static file serving) ==========
-
-// Health check
+// 2. API routes – must come before static file serving
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// OpenRouter AI endpoint
 app.post('/api/generate-report', async (req, res) => {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -52,10 +49,7 @@ app.post('/api/generate-report', async (req, res) => {
       body: JSON.stringify({
         model: 'google/gemma-2-9b-it:free',
         messages: [
-          {
-            role: 'system',
-            content: 'You are an expert geopolitical intelligence analyst. Provide concise, factual, and structured reports based on the news provided.'
-          },
+          { role: 'system', content: 'You are an expert geopolitical intelligence analyst. Provide concise, factual, and structured reports based on the news provided.' },
           { role: 'user', content: prompt },
         ],
         temperature: 0.5,
@@ -82,7 +76,6 @@ app.post('/api/generate-report', async (req, res) => {
   }
 });
 
-// Manual ingestion endpoint
 app.post('/api/ingest', async (req, res) => {
   try {
     console.log('🔄 Manual ingestion triggered');
@@ -95,16 +88,16 @@ app.post('/api/ingest', async (req, res) => {
   }
 });
 
-// ========== Serve Static Frontend Files (after API routes) ==========
-// __dirname is already the 'dist' folder (where server.js lives)
+// 3. Serve static frontend files (after API routes)
+// The frontend build output (index.html, assets, etc.) is in the same 'dist' folder
 app.use(express.static(__dirname));
 
-// Catch-all route for client-side routing (must be last)
+// 4. Catch-all route for client-side routing (must be after static)
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// ========== Scheduled Background Tasks ==========
+// 5. Scheduled background tasks (non‑blocking)
 (async () => {
   console.log('🚀 Running initial ingestion on server start...');
   try {
@@ -123,9 +116,9 @@ setInterval(async () => {
   } catch (err) {
     console.error('❌ Scheduled ingestion failed:', err);
   }
-}, 15 * 60 * 1000); // every 15 minutes
+}, 15 * 60 * 1000);
 
-// Start the server
+// 6. Start the server
 app.listen(port, () => {
   console.log(`✅ Server running on port ${port}`);
   console.log(`📍 Health: http://localhost:${port}/api/health`);

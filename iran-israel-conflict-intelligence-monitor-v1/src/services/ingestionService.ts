@@ -12,10 +12,10 @@ if (!supabaseUrl || !supabaseServiceKey) {
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// Define user-agent constant for reuse
+// Define user-agent constant (used both in parser and image extraction)
 const USER_AGENT = 'Mozilla/5.0 (compatible; IranIsraelMonitor/1.0; +https://iran-israel-news.onrender.com)';
 
-// Pass options directly to Parser constructor
+// Pass all options directly to the Parser constructor
 const parser = new Parser({
   timeout: 10000,
   headers: { 'User-Agent': USER_AGENT }
@@ -45,9 +45,9 @@ async function extractImageUrl(item: any, link: string): Promise<string> {
   }
   if (link) {
     try {
-      const response = await axios.get(link, { 
-        timeout: 8000, 
-        headers: { 'User-Agent': USER_AGENT } // Use constant instead of parser.options
+      const response = await axios.get(link, {
+        timeout: 8000,
+        headers: { 'User-Agent': USER_AGENT } // Use constant – no dependency on parser.options
       });
       const ogMatch = response.data.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/);
       if (ogMatch) return ogMatch[1];

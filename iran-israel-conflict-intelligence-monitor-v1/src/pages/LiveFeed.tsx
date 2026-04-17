@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { getLatestArticles, Article } from '../services/newsService';
+import { getLatestArticles } from '../services/newsService';
+import type { Article } from '../types';
 
 export default function LiveFeed() {
   const [articles, setArticles] = useState<Article[]>([]);
@@ -8,13 +9,15 @@ export default function LiveFeed() {
   const [page, setPage] = useState(1);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const lastArticleRef = useRef<HTMLDivElement | null>(null);
-
   const ARTICLES_PER_PAGE = 20;
 
   const loadArticles = useCallback(async (pageNum: number, reset = false) => {
     try {
       const allArticles = await getLatestArticles(pageNum * ARTICLES_PER_PAGE);
-      const newArticles = allArticles.slice((pageNum - 1) * ARTICLES_PER_PAGE, pageNum * ARTICLES_PER_PAGE);
+      const newArticles = allArticles.slice(
+        (pageNum - 1) * ARTICLES_PER_PAGE,
+        pageNum * ARTICLES_PER_PAGE
+      );
       
       if (reset) {
         setArticles(newArticles);
@@ -32,7 +35,7 @@ export default function LiveFeed() {
 
   useEffect(() => {
     loadArticles(1, true);
-  }, []);
+  }, [loadArticles]);
 
   useEffect(() => {
     if (observerRef.current) observerRef.current.disconnect();
@@ -73,12 +76,12 @@ export default function LiveFeed() {
             ref={index === articles.length - 1 ? lastArticleRef : null}
             className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition"
           >
-            <a href={article.link} target="_blank" rel="noopener noreferrer" className="block">
+            <a href={article.url} target="_blank" rel="noopener noreferrer" className="block">
               <div className="md:flex">
-                {article.imageUrl && (
+                {article.image_url && (
                   <div className="md:w-48 h-48 md:h-auto">
                     <img
-                      src={article.imageUrl}
+                      src={article.image_url}
                       alt=""
                       className="w-full h-full object-cover"
                       onError={(e) => {
@@ -89,17 +92,17 @@ export default function LiveFeed() {
                 )}
                 <div className="p-5 flex-1">
                   <div className="flex items-center gap-2 text-xs text-gray-500 mb-2">
-                    <span className="bg-gray-100 px-2 py-1 rounded">{article.source}</span>
+                    <span className="bg-gray-100 px-2 py-1 rounded">{article.source_name}</span>
                     <span>•</span>
-                    <span>{new Date(article.publishedAt).toLocaleString()}</span>
-                    {article.isBreaking && (
+                    <span>{new Date(article.published_at?.toDate()).toLocaleString()}</span>
+                    {article.is_breaking && (
                       <span className="bg-red-100 text-red-700 px-2 py-1 rounded font-semibold">BREAKING</span>
                     )}
                   </div>
                   <h2 className="text-xl font-bold text-gray-900 mb-2 hover:text-blue-600">
                     {article.title}
                   </h2>
-                  <p className="text-gray-600 line-clamp-3">{article.summary}</p>
+                  <p className="text-gray-600 line-clamp-3">{article.summary || article.content?.slice(0, 150)}</p>
                   <div className="mt-3 text-blue-500 text-sm font-medium">
                     Read full article →
                   </div>
@@ -131,5 +134,3 @@ export default function LiveFeed() {
     </div>
   );
 }
-
-export default LiveFeed;

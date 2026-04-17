@@ -59,7 +59,6 @@ app.post('/api/generate-report', async (req, res) => {
     res.json({ content: text });
   } catch (error: any) {
     console.error('❌ Error generating content with Groq:', error);
-    // Provide user-friendly error messages
     if (error.message?.includes('API key')) {
       res.status(401).json({ error: 'Invalid Groq API key. Please check your credentials.' });
     } else if (error.message?.includes('rate') || error.message?.includes('quota')) {

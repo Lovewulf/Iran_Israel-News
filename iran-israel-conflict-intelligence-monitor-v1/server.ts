@@ -1,9 +1,9 @@
 import express from 'express';
 import cors from 'cors';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { runFullIngestion } from './src/services/ingestionService.js';
+import Groq from 'groq-sdk';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17,23 +17,15 @@ app.use(express.json());
 // Serve static files from the same directory where server.js lives (which is dist/)
 app.use(express.static(__dirname));
 
-// Gemini AI endpoint (with robust error handling)
+// ========== Groq AI Endpoint (replaces Gemini) ==========
 app.post('/api/generate-report', async (req, res) => {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    console.error('❌ GEMINI_API_KEY is not set in environment');
-    return res.status(500).json({ error: 'Gemini API key not configured. Please set GEMINI_API_KEY in Render environment.' });
+  const groqApiKey = process.env.GROQ_API_KEY;
+  if (!groqApiKey) {
+    console.error('❌ GROQ_API_KEY is not set in environment');
+    return res.status(500).json({ error: 'GROQ_API_KEY not configured. Please set it in Render environment.' });
   }
 
-  let genAI;
-  try {
-    genAI = new GoogleGenerativeAI(apiKey);
-  } catch (err) {
-    console.error('❌ Failed to initialize Gemini AI:', err);
-    return res.status(500).json({ error: 'Gemini AI initialization failed.' });
-  }
-
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  const groq = new Groq({ apiKey: groqApiKey });
 
   try {
     const { prompt } = req.body;
@@ -41,27 +33,44 @@ app.post('/api/generate-report', async (req, res) => {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
-    console.log('🤖 Generating AI report...');
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+    console.log('🤖 Generating AI report with Groq (llama3-70b-8192)...');
+    const chatCompletion = await groq.chat.completions.create({
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an expert geopolitical intelligence analyst. Provide concise, factual, and structured reports based on the news provided.'
+        },
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+      model: 'llama3-70b-8192', // Fast, high-quality model with generous free tier
+      temperature: 0.5,
+      max_tokens: 1500,
+    });
+
+    const text = chatCompletion.choices[0]?.message?.content || '';
+    if (!text) {
+      throw new Error('Empty response from Groq');
+    }
 
     console.log('✅ AI report generated successfully');
     res.json({ content: text });
   } catch (error: any) {
-    console.error('❌ Error generating content:', error);
-    // Provide more specific error messages based on error type
+    console.error('❌ Error generating content with Groq:', error);
+    // Provide user-friendly error messages
     if (error.message?.includes('API key')) {
-      res.status(401).json({ error: 'Invalid Gemini API key. Please check your credentials.' });
-    } else if (error.message?.includes('quota')) {
-      res.status(429).json({ error: 'Gemini API quota exceeded. Please try again later.' });
+      res.status(401).json({ error: 'Invalid Groq API key. Please check your credentials.' });
+    } else if (error.message?.includes('rate') || error.message?.includes('quota')) {
+      res.status(429).json({ error: 'Groq API rate limit reached. Please try again later.' });
     } else {
       res.status(500).json({ error: error.message || 'Failed to generate content' });
     }
   }
 });
 
-// Ingestion endpoint (manual trigger)
+// ========== Ingestion endpoint (manual trigger) ==========
 app.post('/api/ingest', async (req, res) => {
   try {
     console.log('🔄 Manual ingestion triggered at', new Date().toISOString());
@@ -82,18 +91,18 @@ app.post('/api/ingest', async (req, res) => {
   }
 });
 
-// Health check
+// ========== Health check ==========
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Catch-all: serve React app
+// ========== Serve React app (catch-all) ==========
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// ========== AUTOMATIC SCHEDULED INGESTION ==========
-// Run once on startup to populate database immediately
+// ========== Automatic Scheduled Ingestion ==========
+// Run once on startup
 (async () => {
   console.log('🚀 Running initial ingestion on server start...');
   try {
@@ -104,7 +113,7 @@ app.get('*', (req, res) => {
   }
 })();
 
-// Schedule ingestion every 15 minutes (900,000 ms)
+// Schedule ingestion every 15 minutes
 const INGESTION_INTERVAL_MS = 15 * 60 * 1000;
 setInterval(async () => {
   console.log('⏰ Scheduled ingestion running...');
@@ -118,8 +127,10 @@ setInterval(async () => {
 
 console.log(`⏲️ Scheduled ingestion will run every ${INGESTION_INTERVAL_MS / 60000} minutes.`);
 
+// ========== Start Server ==========
 app.listen(port, () => {
   console.log(`✅ Server running on port ${port}`);
   console.log(`📍 Health: http://localhost:${port}/api/health`);
   console.log(`📍 Ingestion: POST http://localhost:${port}/api/ingest (manual)`);
+  console.log(`📍 AI reports: POST http://localhost:${port}/api/generate-report (via Groq)`);
 });

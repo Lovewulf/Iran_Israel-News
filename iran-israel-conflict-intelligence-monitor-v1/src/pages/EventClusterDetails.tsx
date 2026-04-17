@@ -261,3 +261,5 @@ export const EventClusterDetails = () => {
     </div>
   );
 };
+
+export default EventClusterDetails;

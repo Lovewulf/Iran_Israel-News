@@ -35,10 +35,8 @@ const ReportCard = ({ report, idx }: { report: AIReport; idx: number }) => {
   const impactColor = getImpactColor(report.impact_score || 5);
   const impactLabel = getImpactLabel(report.impact_score || 5);
 
-  // Debug: log content presence
-  console.log(`Report ${idx} - has content:`, !!report.content, 'length:', report.content?.length);
-
-  const contentToShow = report.content || '';
+  const content = report.content || '';
+  const displayContent = isExpanded ? content : content.slice(0, 500) + (content.length > 500 ? '...' : '');
 
   return (
     <motion.div
@@ -77,18 +75,12 @@ const ReportCard = ({ report, idx }: { report: AIReport; idx: number }) => {
         </div>
       </div>
       <div className="p-5">
-        {contentToShow ? (
+        {content ? (
           <>
-            {/* Try Markdown first */}
-            <div className="prose prose-sm max-w-none prose-headings:text-gray-900 prose-headings:font-bold prose-p:text-gray-600 prose-strong:text-gray-800 prose-ul:text-gray-600 prose-li:text-gray-600">
-              <Markdown>
-                {contentToShow.slice(0, isExpanded ? undefined : 500)}
-                {!isExpanded && contentToShow.length > 500 ? '...' : ''}
-              </Markdown>
+            <div className="prose prose-sm max-w-none prose-headings:text-gray-900 prose-headings:font-bold prose-p:text-gray-700 prose-strong:text-gray-900 prose-ul:text-gray-700 prose-li:text-gray-700">
+              <Markdown>{displayContent}</Markdown>
             </div>
-            {/* Fallback plain text if Markdown fails (inspect element to see) */}
-            <div className="hidden" data-testid="plain-text-fallback">{contentToShow}</div>
-            {contentToShow.length > 500 && (
+            {content.length > 500 && (
               <button
                 onClick={() => setIsExpanded(!isExpanded)}
                 className="mt-4 text-xs font-bold text-indigo-600 hover:underline flex items-center gap-1 uppercase tracking-wider"
@@ -115,7 +107,6 @@ export default function AIReports() {
     const fetchReports = async () => {
       try {
         const data = await getAIReports(20);
-        console.log('Fetched reports count:', data.length);
         setReports(data);
       } catch (error) {
         console.error('Failed to fetch reports:', error);
@@ -135,14 +126,8 @@ export default function AIReports() {
         alert("No articles found. Ingest some data first.");
         return;
       }
-      console.log(`Generating ${type} report...`);
       const newReport = await generateSituationReport(articles, type);
-      console.log('Report generated, content length:', newReport.content?.length);
-      if (!newReport.content) {
-        throw new Error('Generated report has no content');
-      }
       await saveReport(newReport);
-      console.log('Report saved');
       const updated = await getAIReports(20);
       setReports(updated);
     } catch (error) {

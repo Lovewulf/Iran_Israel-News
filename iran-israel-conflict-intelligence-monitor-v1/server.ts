@@ -14,7 +14,7 @@ const port = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// ✅ Serve static files from the same directory where server.js lives (which is dist/)
+// Serve static files from the same directory where server.js lives (which is dist/)
 app.use(express.static(__dirname));
 
 // Gemini AI endpoint
@@ -70,13 +70,39 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// ✅ Catch-all: serve index.html from the same directory
+// Catch-all: serve React app
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+// ========== AUTOMATIC SCHEDULED INGESTION ==========
+// Run once on startup to populate database immediately
+(async () => {
+  console.log('🚀 Running initial ingestion on server start...');
+  try {
+    const result = await runFullIngestion();
+    console.log(`✅ Initial ingestion added ${result.totalAdded} articles.`);
+  } catch (err) {
+    console.error('❌ Initial ingestion failed:', err);
+  }
+})();
+
+// Schedule ingestion every 15 minutes (900,000 ms)
+const INGESTION_INTERVAL_MS = 15 * 60 * 1000;
+setInterval(async () => {
+  console.log('⏰ Scheduled ingestion running...');
+  try {
+    const result = await runFullIngestion();
+    console.log(`✅ Scheduled ingestion added ${result.totalAdded} new articles.`);
+  } catch (err) {
+    console.error('❌ Scheduled ingestion failed:', err);
+  }
+}, INGESTION_INTERVAL_MS);
+
+console.log(`⏲️ Scheduled ingestion will run every ${INGESTION_INTERVAL_MS / 60000} minutes.`);
+
 app.listen(port, () => {
   console.log(`✅ Server running on port ${port}`);
   console.log(`📍 Health: http://localhost:${port}/api/health`);
-  console.log(`📍 Ingestion: POST http://localhost:${port}/api/ingest`);
+  console.log(`📍 Ingestion: POST http://localhost:${port}/api/ingest (manual)`);
 });

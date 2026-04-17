@@ -70,6 +70,18 @@ export async function saveReport(report: Partial<AIReport>): Promise<string> {
   return data[0].id;
 }
 
+/**
+ * Deletes all AI report records from the database.
+ * Uses the service role key to bypass RLS for this admin action.
+ */
+export async function deleteAllReports(): Promise<void> {
+  const { error } = await supabase
+    .from('ai_reports')
+    .delete()
+    .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all rows
+  if (error) throw error;
+}
+
 // ============ Event Clusters ============
 export async function getEventClusters(status?: 'active' | 'archived'): Promise<EventCluster[]> {
   let query = supabase.from('event_clusters').select('*');

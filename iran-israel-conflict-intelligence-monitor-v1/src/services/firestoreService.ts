@@ -4,24 +4,36 @@ import type { Source, AIReport, EventCluster, Article } from '../types';
 // ============ Sources ============
 export async function getSources(): Promise<Source[]> {
   const { data, error } = await supabase.from('sources').select('*').order('name');
-  if (error) throw error;
+  if (error) {
+    console.error('getSources error:', error);
+    throw error;
+  }
   return data as Source[];
 }
 
 export async function addSource(source: Omit<Source, 'id'>): Promise<string> {
   const { data, error } = await supabase.from('sources').insert(source).select();
-  if (error) throw error;
+  if (error) {
+    console.error('addSource error:', error);
+    throw error;
+  }
   return data[0].id;
 }
 
-export async function updateSource(id: string, data: Partial<Source>): Promise<void> {
-  const { error } = await supabase.from('sources').update(data).eq('id', id);
-  if (error) throw error;
+export async function updateSource(id: string, updates: Partial<Source>): Promise<void> {
+  const { error } = await supabase.from('sources').update(updates).eq('id', id);
+  if (error) {
+    console.error('updateSource error:', error);
+    throw error;
+  }
 }
 
 export async function deleteSource(id: string): Promise<void> {
   const { error } = await supabase.from('sources').delete().eq('id', id);
-  if (error) throw error;
+  if (error) {
+    console.error('deleteSource error:', error);
+    throw error;
+  }
 }
 
 export async function testSourceConnection(sourceId: string): Promise<{ success: boolean; message: string }> {
@@ -42,13 +54,19 @@ export async function getAIReports(limitCount = 20): Promise<AIReport[]> {
     .select('*')
     .order('generated_at', { ascending: false })
     .limit(limitCount);
-  if (error) throw error;
+  if (error) {
+    console.error('getAIReports error:', error);
+    throw error;
+  }
   return data as AIReport[];
 }
 
 export async function saveReport(report: Partial<AIReport>): Promise<string> {
   const { data, error } = await supabase.from('ai_reports').insert(report).select();
-  if (error) throw error;
+  if (error) {
+    console.error('saveReport error:', error);
+    throw error;
+  }
   return data[0].id;
 }
 
@@ -57,12 +75,45 @@ export async function getEventClusters(status?: 'active' | 'archived'): Promise<
   let query = supabase.from('event_clusters').select('*');
   if (status) query = query.eq('status', status);
   const { data, error } = await query.order('start_time', { ascending: false });
-  if (error) throw error;
+  if (error) {
+    console.error('getEventClusters error:', error);
+    throw error;
+  }
   return data as EventCluster[];
 }
 
 export async function getEventClusterById(id: string): Promise<EventCluster | null> {
   const { data, error } = await supabase.from('event_clusters').select('*').eq('id', id).single();
-  if (error) return null;
+  if (error) {
+    if (error.code !== 'PGRST116') console.error('getEventClusterById error:', error);
+    return null;
+  }
   return data as EventCluster;
+}
+
+// ============ Additional Helper Functions ============
+export async function getArticlesByCluster(clusterId: string): Promise<Article[]> {
+  const { data, error } = await supabase
+    .from('articles')
+    .select('*')
+    .eq('cluster_id', clusterId)
+    .order('published_at', { ascending: false });
+  if (error) {
+    console.error('getArticlesByCluster error:', error);
+    return [];
+  }
+  return data as Article[];
+}
+
+export async function getArticles(limitCount = 100): Promise<Article[]> {
+  const { data, error } = await supabase
+    .from('articles')
+    .select('*')
+    .order('published_at', { ascending: false })
+    .limit(limitCount);
+  if (error) {
+    console.error('getArticles error:', error);
+    return [];
+  }
+  return data as Article[];
 }

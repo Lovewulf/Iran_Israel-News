@@ -2,8 +2,14 @@ import { createClient } from '@supabase/supabase-js';
 import axios from 'axios';
 import Parser from 'rss-parser';
 
-const supabaseUrl = process.env.SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+// Validate environment variables
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  throw new Error('Missing Supabase environment variables. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
+}
+
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const parser = new Parser();
 
@@ -27,7 +33,9 @@ async function extractImageUrl(item: any, link: string): Promise<string> {
       const response = await axios.get(link, { timeout: 5000 });
       const ogMatch = response.data.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/);
       if (ogMatch) return ogMatch[1];
-    } catch (e) {}
+    } catch (e) {
+      // Silent fail – image not critical
+    }
   }
   return '';
 }
@@ -42,10 +50,23 @@ export async function runFullIngestion() {
       const feed = await parser.parseURL(source.url);
       
       for (const item of feed.items.slice(0, 10)) {
-        const { data: existing } = await supabase.from('articles').select('url').eq('url', item.link);
+        // Check for duplicate by URL
+        const { data: existing, error: checkError } = await supabase
+          .from('articles')
+          .select('url')
+          .eq('url', item.link);
+        
+        if (checkError) {
+          console.error(`Error checking duplicate for ${item.link}:`, checkError);
+          continue;
+        }
         if (existing?.length) continue;
 
         const imageUrl = await extractImageUrl(item, item.link);
+        
+        // Convert dates to ISO strings for Supabase
+        const publishedAt = item.isoDate ? new Date(item.isoDate).toISOString() : new Date().toISOString();
+        const now = new Date().toISOString();
         
         const article = {
           title: item.title || 'No title',
@@ -54,10 +75,10 @@ export async function runFullIngestion() {
           url: item.link,
           source_name: source.name,
           source_type: 'rss',
-          published_at: item.isoDate ? new Date(item.isoDate) : new Date(),
-          ingested_at: new Date(),
-          first_seen_at: new Date(),
-          last_updated_at: new Date(),
+          published_at: publishedAt,
+          ingested_at: now,
+          first_seen_at: now,
+          last_updated_at: now,
           fingerprint: Buffer.from(item.link + item.title).toString('base64'),
           tag_ids: [],
           image_url: imageUrl,
@@ -66,8 +87,11 @@ export async function runFullIngestion() {
           is_verified: false
         };
 
-        const { error } = await supabase.from('articles').insert(article);
-        if (error) throw error;
+        const { error: insertError } = await supabase.from('articles').insert(article);
+        if (insertError) {
+          console.error(`Failed to insert article ${article.title}:`, insertError);
+          continue;
+        }
         totalAdded++;
         console.log(`✅ Added: ${article.title}`);
       }

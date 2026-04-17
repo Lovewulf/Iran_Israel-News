@@ -31,10 +31,10 @@ app.post('/api/generate-report', async (req, res) => {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
-    // Truncate prompt to ~4000 characters to avoid token limits
+    // Truncate prompt to avoid token limits
     if (prompt.length > 4000) {
       console.log(`⚠️ Prompt too long (${prompt.length} chars), truncating to 4000`);
-      prompt = prompt.substring(0, 4000) + "\n\n[truncated due to length]";
+      prompt = prompt.substring(0, 4000);
     }
 
     console.log(`🤖 Generating report (prompt length: ${prompt.length})...`);
@@ -49,7 +49,7 @@ app.post('/api/generate-report', async (req, res) => {
     });
 
     const text = chatCompletion.choices[0]?.message?.content || '';
-    if (!text) throw new Error('Empty response');
+    if (!text) throw new Error('Empty response from Groq');
 
     console.log('✅ Report generated');
     res.json({ content: text });
@@ -59,14 +59,8 @@ app.post('/api/generate-report', async (req, res) => {
     if (error && typeof error === 'object') {
       if ('message' in error && typeof error.message === 'string') {
         errorMessage = error.message;
-      } else if ('response' in error && error.response && typeof error.response === 'object') {
-        // Safely extract error from response
-        const response = error.response as any;
-        if (response.data && typeof response.data === 'object') {
-          errorMessage = response.data.error?.message || JSON.stringify(response.data);
-        } else {
-          errorMessage = String(response);
-        }
+      } else if ('response' in error && error.response && typeof error.response.data === 'object') {
+        errorMessage = error.response.data?.error?.message || JSON.stringify(error.response.data);
       }
     }
     res.status(500).json({ error: errorMessage });
@@ -105,7 +99,7 @@ app.get('*', (req, res) => {
   try {
     const result = await runFullIngestion();
     console.log(`✅ Added ${result.totalAdded} articles.`);
-  } catch (err) { console.error('❌ Failed'); }
+  } catch (err) { console.error('❌ Initial ingestion failed'); }
 })();
 
 setInterval(async () => {
@@ -113,7 +107,7 @@ setInterval(async () => {
   try {
     const result = await runFullIngestion();
     console.log(`✅ Added ${result.totalAdded} articles.`);
-  } catch (err) { console.error('❌ Failed'); }
+  } catch (err) { console.error('❌ Scheduled ingestion failed'); }
 }, 15 * 60 * 1000);
 
-app.listen(port, () => console.log(`✅ Server on port ${port}`));
+app.listen(port, () => console.log(`✅ Server running on port ${port}`));

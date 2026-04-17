@@ -234,4 +234,4 @@ export const AIReports = () => {
     </div>
   );
 };
-export default AIReports;
+

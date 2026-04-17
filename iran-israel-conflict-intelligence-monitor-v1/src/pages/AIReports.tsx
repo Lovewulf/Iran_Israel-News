@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Sparkles, Activity, ChevronRight, Calendar, ShieldCheck, RefreshCw, Zap, TrendingUp, ShieldAlert, Trash2, Bell } from 'lucide-react';
+import { FileText, Sparkles, Activity, ChevronRight, Calendar, ShieldCheck, RefreshCw, Zap, TrendingUp, ShieldAlert, Trash2 } from 'lucide-react';
 import { AIReport, Article } from '../types';
 import { getAIReports, getArticles, saveReport, deleteAllReports } from '../services/firestoreService';
 import { generateSituationReport } from '../services/aiService';
@@ -140,18 +140,8 @@ export default function AIReports() {
     fetchReports();
   }, []);
 
+  // ✅ Generation allowed anytime – no duplicate blocking
   const handleGenerate = async (type: AIReport['type']) => {
-    // Check if there are new articles since last report of this type
-    const lastReport = reports.find(r => r.type === type);
-    if (lastReport) {
-      const articles = await getArticles(50);
-      const newArticlesSince = articles.filter(a => new Date(a.published_at) > new Date(lastReport.generated_at));
-      if (newArticlesSince.length === 0) {
-        alert(`No new articles since the last ${type} report (${formatDate(lastReport.generated_at)}). Please view existing reports.`);
-        return;
-      }
-    }
-
     setGenerating(true);
     setGeneratingType(type);
     try {
@@ -162,7 +152,7 @@ export default function AIReports() {
       }
       const newReport = await generateSituationReport(articles, type);
       await saveReport(newReport);
-      await fetchReports(); // refresh
+      await fetchReports();
     } catch (error) {
       console.error('Failed to generate report:', error);
       alert("Failed to generate report. Check console.");

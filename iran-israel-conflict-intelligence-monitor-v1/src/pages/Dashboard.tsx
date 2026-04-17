@@ -93,32 +93,8 @@ export default function Dashboard() {
         <p className="text-gray-600 mt-2 text-lg">Real‑time intelligence & news from global sources</p>
       </div>
 
-      {/* Breaking News Ticker (24 hours) */}
+      {/* Breaking News Ticker */}
       <BreakingNewsTicker />
-
-      {/* Breaking News Bar (if any - fallback) */}
-      {breaking.length > 0 && (
-        <div className="bg-red-50 border-l-4 border-red-600 p-4 rounded-r-lg shadow-sm">
-          <div className="flex items-center gap-2">
-            <Zap className="w-5 h-5 text-red-600" />
-            <span className="font-bold text-red-600 uppercase text-sm">Breaking News</span>
-          </div>
-          <div className="mt-2 space-y-2">
-            {breaking.slice(0, 3).map((article) => (
-              <a
-                key={article.id}
-                href={article.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block hover:underline text-gray-800"
-              >
-                <span className="font-semibold">{article.title}</span>
-                <span className="text-sm text-gray-500 ml-2">– {article.source_name}</span>
-              </a>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Hero Section */}
       {heroArticle && (
@@ -154,7 +130,7 @@ export default function Dashboard() {
                 {heroArticle.title}
               </h2>
               <p className="text-gray-600 text-base mb-4 leading-relaxed">
-                {heroArticle.summary || heroArticle.content?.slice(0, 200)}...
+                {(heroArticle.summary || heroArticle.content)?.substring(0, 250)}...
               </p>
               <a
                 href={heroArticle.url}
@@ -211,7 +187,7 @@ export default function Dashboard() {
                     </a>
                   </h3>
                   <p className="text-gray-600 text-sm line-clamp-3 mb-4">
-                    {article.summary || article.content?.slice(0, 120)}...
+                    {(article.summary || article.content)?.substring(0, 120)}...
                   </p>
                   <div className="mt-auto">
                     <a

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Sparkles, Activity, ChevronRight, Calendar, ShieldCheck, RefreshCw, Zap, TrendingUp, ShieldAlert, AlertTriangle, CheckCircle } from 'lucide-react';
+import { FileText, Sparkles, Activity, ChevronRight, Calendar, ShieldCheck, RefreshCw, Zap, TrendingUp, ShieldAlert } from 'lucide-react';
 import { AIReport, Article } from '../types';
 import { getAIReports, getArticles, saveReport } from '../services/firestoreService';
 import { generateSituationReport } from '../services/aiService';
@@ -34,6 +34,11 @@ const ReportCard = ({ report, idx }: { report: AIReport; idx: number }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const impactColor = getImpactColor(report.impact_score || 5);
   const impactLabel = getImpactLabel(report.impact_score || 5);
+
+  // Debug log
+  console.log(`Report ${idx} - content length:`, report.content?.length);
+
+  const contentToShow = report.content || '';
 
   return (
     <motion.div
@@ -74,19 +79,25 @@ const ReportCard = ({ report, idx }: { report: AIReport; idx: number }) => {
         </div>
       </div>
       <div className="p-5">
-        <div className="prose prose-sm max-w-none prose-headings:text-gray-900 prose-headings:font-bold prose-p:text-gray-600 prose-strong:text-gray-800 prose-ul:text-gray-600 prose-li:text-gray-600">
-          <Markdown>
-            {report.content.slice(0, isExpanded ? undefined : 500)}
-            {!isExpanded && report.content.length > 500 ? '...' : ''}
-          </Markdown>
-        </div>
-        {report.content.length > 500 && (
-          <button
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="mt-4 text-xs font-bold text-indigo-600 hover:underline flex items-center gap-1 uppercase tracking-wider"
-          >
-            {isExpanded ? 'Collapse Analysis' : 'Read Full Report'} <ChevronRight className="w-3 h-3" />
-          </button>
+        {contentToShow ? (
+          <>
+            <div className="prose prose-sm max-w-none prose-headings:text-gray-900 prose-headings:font-bold prose-p:text-gray-600 prose-strong:text-gray-800 prose-ul:text-gray-600 prose-li:text-gray-600">
+              <Markdown>
+                {contentToShow.slice(0, isExpanded ? undefined : 500)}
+                {!isExpanded && contentToShow.length > 500 ? '...' : ''}
+              </Markdown>
+            </div>
+            {contentToShow.length > 500 && (
+              <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="mt-4 text-xs font-bold text-indigo-600 hover:underline flex items-center gap-1 uppercase tracking-wider"
+              >
+                {isExpanded ? 'Collapse Analysis' : 'Read Full Report'} <ChevronRight className="w-3 h-3" />
+              </button>
+            )}
+          </>
+        ) : (
+          <div className="text-red-500">⚠️ No content available for this report.</div>
         )}
       </div>
     </motion.div>
@@ -103,6 +114,7 @@ export default function AIReports() {
     const fetchReports = async () => {
       try {
         const data = await getAIReports(20);
+        console.log('Fetched reports:', data.length);
         setReports(data);
       } catch (error) {
         console.error('Failed to fetch reports:', error);
@@ -122,13 +134,19 @@ export default function AIReports() {
         alert("No articles found. Ingest some data first.");
         return;
       }
+      console.log(`Generating ${type} report...`);
       const newReport = await generateSituationReport(articles, type);
+      console.log('Report generated, content length:', newReport.content?.length);
+      if (!newReport.content) {
+        throw new Error('Generated report has no content');
+      }
       await saveReport(newReport);
+      console.log('Report saved');
       const updated = await getAIReports(20);
       setReports(updated);
     } catch (error) {
       console.error('Failed to generate report:', error);
-      alert("Failed to generate report. Check console.");
+      alert("Failed to generate report. Check console for details.");
     } finally {
       setGenerating(false);
       setGeneratingType(null);
@@ -155,7 +173,7 @@ export default function AIReports() {
             AI Intelligence Reports
           </h1>
           <p className="text-gray-500 mt-1">
-            Automated strategic reports synthesized by Gemini AI based on recent articles.
+            Automated strategic reports synthesized by Groq AI based on recent articles.
           </p>
         </div>
         <div className="flex gap-2">

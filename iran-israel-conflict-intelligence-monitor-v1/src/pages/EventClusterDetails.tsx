@@ -1,10 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { MapPin, Calendar, AlertTriangle, Shield, FileText, ExternalLink, ArrowLeft, Activity, Clock, Globe, Zap } from 'lucide-react';
+import { MapPin, Calendar, AlertTriangle, Shield, FileText, ExternalLink, ArrowLeft, Activity, Clock } from 'lucide-react';
 import { EventCluster, Article } from '../types';
 import { getEventClusterById, getArticles } from '../services/firestoreService';
 import { cn } from '../lib/utils';
 import { SourceBadge } from '../components/SourceBadge';
+
+const formatDate = (dateValue: any) => {
+  if (!dateValue) return 'Unknown date';
+  try {
+    const d = new Date(dateValue);
+    return d.toLocaleString();
+  } catch {
+    return 'Invalid date';
+  }
+};
 
 const severityColors = {
   low: "bg-green-500/10 text-green-500 border-green-500/20",
@@ -26,7 +36,7 @@ const ArticleCard = ({ article }: { article: Article }) => (
           <SourceBadge source={article.source_name} type={article.source_type} />
           <span className="text-xs text-muted-foreground flex items-center gap-1">
             <Clock className="w-3 h-3" />
-            {article.published_at.toDate().toLocaleString()}
+            {formatDate(article.published_at)}
           </span>
         </div>
         <h4 className="font-semibold text-lg mb-2">{article.title}</h4>
@@ -39,7 +49,6 @@ const ArticleCard = ({ article }: { article: Article }) => (
   </a>
 );
 
-// 👇 KEY CHANGE: Default export instead of named export
 export default function EventClusterDetails() {
   const { id } = useParams<{ id: string }>();
   const [cluster, setCluster] = useState<EventCluster | null>(null);
@@ -62,11 +71,9 @@ export default function EventClusterDetails() {
           return;
         }
         setCluster(clusterData);
-        
-        // Fetch associated articles
-        if (clusterData.article_ids.length > 0) {
-          const articleData = await getArticles(50);
-          const related = articleData.filter(a => clusterData.article_ids.includes(a.id || ''));
+        if (clusterData.article_ids?.length) {
+          const allArticles = await getArticles(50);
+          const related = allArticles.filter(a => clusterData.article_ids.includes(a.id || ''));
           setArticles(related);
         }
       } catch (err) {
@@ -105,12 +112,9 @@ export default function EventClusterDetails() {
 
   return (
     <div className="container max-w-4xl mx-auto py-8 px-4">
-      {/* Back button */}
       <Link to="/timeline" className="inline-flex items-center gap-2 text-muted-foreground hover:text-primary mb-6">
         <ArrowLeft className="w-4 h-4" /> Back to Timeline
       </Link>
-
-      {/* Header */}
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-3 flex-wrap">
           <span className={cn("px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border", severityColors[cluster.severity])}>
@@ -121,14 +125,12 @@ export default function EventClusterDetails() {
           </span>
           <span className="text-xs text-muted-foreground flex items-center gap-1">
             <Calendar className="w-3 h-3" />
-            {cluster.start_time.toDate().toLocaleDateString()} – {cluster.end_time.toDate().toLocaleDateString()}
+            {formatDate(cluster.start_time)} – {formatDate(cluster.end_time)}
           </span>
         </div>
         <h1 className="text-3xl font-bold mb-4">{cluster.title}</h1>
         <p className="text-lg text-muted-foreground leading-relaxed">{cluster.description}</p>
       </div>
-
-      {/* Metadata */}
       <div className="grid md:grid-cols-2 gap-4 mb-8">
         {cluster.primary_location && (
           <div className="flex items-center gap-3 p-3 bg-muted/20 rounded-lg">
@@ -153,19 +155,15 @@ export default function EventClusterDetails() {
           </div>
         )}
       </div>
-
-      {/* AI Summary */}
       {cluster.ai_summary && (
         <div className="bg-primary/5 border border-primary/20 rounded-xl p-5 mb-8">
           <div className="flex items-center gap-2 mb-3">
-            <Zap className="w-5 h-5 text-primary" />
+            <Shield className="w-5 h-5 text-primary" />
             <h3 className="font-semibold">AI-Generated Strategic Summary</h3>
           </div>
           <p className="text-muted-foreground">{cluster.ai_summary}</p>
         </div>
       )}
-
-      {/* Source Articles */}
       <div>
         <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
           <FileText className="w-5 h-5" />

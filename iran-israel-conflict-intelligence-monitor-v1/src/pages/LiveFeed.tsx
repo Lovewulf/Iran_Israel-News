@@ -2,6 +2,16 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { getLatestArticles } from '../services/newsService';
 import type { Article } from '../types';
 
+const formatDate = (dateValue: any) => {
+  if (!dateValue) return 'Unknown date';
+  try {
+    const d = new Date(dateValue);
+    return d.toLocaleString();
+  } catch {
+    return 'Invalid date';
+  }
+};
+
 export default function LiveFeed() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
@@ -18,13 +28,11 @@ export default function LiveFeed() {
         (pageNum - 1) * ARTICLES_PER_PAGE,
         pageNum * ARTICLES_PER_PAGE
       );
-      
       if (reset) {
         setArticles(newArticles);
       } else {
         setArticles(prev => [...prev, ...newArticles]);
       }
-      
       setHasMore(newArticles.length === ARTICLES_PER_PAGE);
     } catch (error) {
       console.error('Failed to load articles:', error);
@@ -39,18 +47,15 @@ export default function LiveFeed() {
 
   useEffect(() => {
     if (observerRef.current) observerRef.current.disconnect();
-    
     observerRef.current = new IntersectionObserver(entries => {
       if (entries[0].isIntersecting && hasMore && !loading) {
         setPage(prev => prev + 1);
         loadArticles(page + 1);
       }
     });
-    
     if (lastArticleRef.current) {
       observerRef.current.observe(lastArticleRef.current);
     }
-    
     return () => observerRef.current?.disconnect();
   }, [hasMore, loading, page, loadArticles]);
 
@@ -68,7 +73,6 @@ export default function LiveFeed() {
         <h1 className="text-3xl font-bold text-gray-900">Live News Feed</h1>
         <p className="text-gray-600 mt-1">Real-time updates from global news sources</p>
       </div>
-
       <div className="space-y-4">
         {articles.map((article, index) => (
           <article
@@ -94,7 +98,7 @@ export default function LiveFeed() {
                   <div className="flex items-center gap-2 text-xs text-gray-500 mb-2">
                     <span className="bg-gray-100 px-2 py-1 rounded">{article.source_name}</span>
                     <span>•</span>
-                    <span>{new Date(article.published_at?.toDate()).toLocaleString()}</span>
+                    <span>{formatDate(article.published_at)}</span>
                     {article.is_breaking && (
                       <span className="bg-red-100 text-red-700 px-2 py-1 rounded font-semibold">BREAKING</span>
                     )}
@@ -112,23 +116,18 @@ export default function LiveFeed() {
           </article>
         ))}
       </div>
-
       {loading && articles.length > 0 && (
         <div className="flex justify-center py-4">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
         </div>
       )}
-
       {!hasMore && articles.length > 0 && (
-        <div className="text-center text-gray-500 py-8">
-          You've reached the end – no more articles.
-        </div>
+        <div className="text-center text-gray-500 py-8">You've reached the end – no more articles.</div>
       )}
-
       {articles.length === 0 && !loading && (
         <div className="text-center text-gray-500 py-12 bg-gray-50 rounded-lg">
           <p className="text-lg">No news articles yet.</p>
-          <p className="text-sm mt-2">Run the ingestion endpoint to fetch latest news.</p>
+          <p className="text-sm mt-2">Run ingestion to fetch latest news.</p>
         </div>
       )}
     </div>

@@ -34,7 +34,7 @@ async function extractImageUrl(item: any, link: string): Promise<string> {
       const ogMatch = response.data.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/);
       if (ogMatch) return ogMatch[1];
     } catch (e) {
-      // Silent fail – image not critical
+      // Silent fail
     }
   }
   return '';
@@ -50,6 +50,12 @@ export async function runFullIngestion() {
       const feed = await parser.parseURL(source.url);
       
       for (const item of feed.items.slice(0, 10)) {
+        // Skip items without a link
+        if (!item.link) {
+          console.warn('Skipping item without link');
+          continue;
+        }
+
         // Check for duplicate by URL
         const { data: existing, error: checkError } = await supabase
           .from('articles')
@@ -64,12 +70,18 @@ export async function runFullIngestion() {
 
         const imageUrl = await extractImageUrl(item, item.link);
         
+        // Ensure title exists (fallback to 'No title')
+        const title = item.title || 'No title';
+        
         // Convert dates to ISO strings for Supabase
         const publishedAt = item.isoDate ? new Date(item.isoDate).toISOString() : new Date().toISOString();
         const now = new Date().toISOString();
         
+        // Generate fingerprint safely using non-null values
+        const fingerprint = Buffer.from(`${item.link}${title}`).toString('base64');
+        
         const article = {
-          title: item.title || 'No title',
+          title: title,
           content: item.content || item.contentSnippet || '',
           summary: item.contentSnippet || item.content?.slice(0, 300) || '',
           url: item.link,
@@ -79,7 +91,7 @@ export async function runFullIngestion() {
           ingested_at: now,
           first_seen_at: now,
           last_updated_at: now,
-          fingerprint: Buffer.from(item.link + item.title).toString('base64'),
+          fingerprint: fingerprint,
           tag_ids: [],
           image_url: imageUrl,
           is_breaking: false,
@@ -89,11 +101,11 @@ export async function runFullIngestion() {
 
         const { error: insertError } = await supabase.from('articles').insert(article);
         if (insertError) {
-          console.error(`Failed to insert article ${article.title}:`, insertError);
+          console.error(`Failed to insert article ${title}:`, insertError);
           continue;
         }
         totalAdded++;
-        console.log(`✅ Added: ${article.title}`);
+        console.log(`✅ Added: ${title}`);
       }
     } catch (err) {
       console.error(`❌ Failed to fetch ${source.name}:`, err);

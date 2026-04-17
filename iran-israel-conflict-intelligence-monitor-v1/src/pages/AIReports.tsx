@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Sparkles, Activity, ChevronRight, Calendar, ShieldCheck, RefreshCw, Zap, TrendingUp, ShieldAlert } from 'lucide-react';
+import { FileText, Sparkles, Activity, ChevronRight, Calendar, ShieldCheck, RefreshCw, Zap, TrendingUp, ShieldAlert, Trash2, Bell } from 'lucide-react';
 import { AIReport, Article } from '../types';
-import { getAIReports, getArticles, saveReport } from '../services/firestoreService';
+import { getAIReports, getArticles, saveReport, deleteAllReports } from '../services/firestoreService';
 import { generateSituationReport } from '../services/aiService';
 import { motion } from 'motion/react';
 import Markdown from 'react-markdown';
@@ -34,7 +34,6 @@ const ReportCard = ({ report, idx }: { report: AIReport; idx: number }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const impactColor = getImpactColor(report.impact_score || 5);
   const impactLabel = getImpactLabel(report.impact_score || 5);
-
   const content = report.content || '';
   const displayContent = isExpanded ? content : content.slice(0, 500) + (content.length > 500 ? '...' : '');
 
@@ -90,7 +89,7 @@ const ReportCard = ({ report, idx }: { report: AIReport; idx: number }) => {
             )}
           </>
         ) : (
-          <div className="text-red-500">⚠️ No content available for this report.</div>
+          <div className="text-red-500">⚠️ No content available.</div>
         )}
       </div>
     </motion.div>
@@ -102,40 +101,87 @@ export default function AIReports() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [generatingType, setGeneratingType] = useState<'daily' | 'flash' | 'strategic' | null>(null);
+  const [newAvailable, setNewAvailable] = useState({ daily: false, flash: false, strategic: false });
+
+  const fetchReports = async () => {
+    try {
+      const data = await getAIReports(20);
+      setReports(data);
+      await checkNewArticlesSinceLastReport(data);
+    } catch (error) {
+      console.error('Failed to fetch reports:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const checkNewArticlesSinceLastReport = async (existingReports: AIReport[]) => {
+    const allArticles = await getArticles(100);
+    if (!allArticles.length) return;
+
+    const getLastReportDate = (type: string) => {
+      const last = existingReports.find(r => r.type === type);
+      return last ? new Date(last.generated_at) : null;
+    };
+
+    const hasNewArticles = (lastDate: Date | null) => {
+      if (!lastDate) return allArticles.length > 0;
+      return allArticles.some(a => new Date(a.published_at) > lastDate);
+    };
+
+    setNewAvailable({
+      daily: hasNewArticles(getLastReportDate('daily')),
+      flash: hasNewArticles(getLastReportDate('flash')),
+      strategic: hasNewArticles(getLastReportDate('strategic')),
+    });
+  };
 
   useEffect(() => {
-    const fetchReports = async () => {
-      try {
-        const data = await getAIReports(20);
-        setReports(data);
-      } catch (error) {
-        console.error('Failed to fetch reports:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchReports();
   }, []);
 
   const handleGenerate = async (type: AIReport['type']) => {
+    // Check if there are new articles since last report of this type
+    const lastReport = reports.find(r => r.type === type);
+    if (lastReport) {
+      const articles = await getArticles(50);
+      const newArticlesSince = articles.filter(a => new Date(a.published_at) > new Date(lastReport.generated_at));
+      if (newArticlesSince.length === 0) {
+        alert(`No new articles since the last ${type} report (${formatDate(lastReport.generated_at)}). Please view existing reports.`);
+        return;
+      }
+    }
+
     setGenerating(true);
     setGeneratingType(type);
     try {
-      const articles = await getArticles(50);
+      const articles = await getArticles(30);
       if (articles.length === 0) {
         alert("No articles found. Ingest some data first.");
         return;
       }
       const newReport = await generateSituationReport(articles, type);
       await saveReport(newReport);
-      const updated = await getAIReports(20);
-      setReports(updated);
+      await fetchReports(); // refresh
     } catch (error) {
       console.error('Failed to generate report:', error);
       alert("Failed to generate report. Check console.");
     } finally {
       setGenerating(false);
       setGeneratingType(null);
+    }
+  };
+
+  const handleClearAll = async () => {
+    if (window.confirm('⚠️ Delete ALL AI reports? This action cannot be undone.')) {
+      try {
+        await deleteAllReports();
+        await fetchReports();
+        alert('All reports deleted.');
+      } catch (error) {
+        console.error('Failed to delete reports:', error);
+        alert('Error deleting reports.');
+      }
     }
   };
 
@@ -162,32 +208,57 @@ export default function AIReports() {
             Automated strategic reports synthesized by Groq AI based on recent articles.
           </p>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => handleGenerate('flash')}
-            disabled={generating}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-indigo-700 transition disabled:opacity-50"
-          >
-            {generatingType === 'flash' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-            Flash Report
-          </button>
-          <button
-            onClick={() => handleGenerate('daily')}
-            disabled={generating}
-            className="px-4 py-2 bg-gray-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-gray-800 transition disabled:opacity-50"
-          >
-            {generatingType === 'daily' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Calendar className="w-4 h-4" />}
-            Daily Brief
-          </button>
-          <button
-            onClick={() => handleGenerate('strategic')}
-            disabled={generating}
-            className="px-4 py-2 bg-amber-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-amber-800 transition disabled:opacity-50"
-          >
-            {generatingType === 'strategic' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <TrendingUp className="w-4 h-4" />}
-            Strategic Assessment
-          </button>
-        </div>
+        <button
+          onClick={handleClearAll}
+          className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-red-700 transition"
+        >
+          <Trash2 className="w-4 h-4" /> Clear All Reports
+        </button>
+      </div>
+
+      <div className="flex gap-3 mb-8 flex-wrap">
+        <button
+          onClick={() => handleGenerate('flash')}
+          disabled={generating}
+          className="relative px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-indigo-700 transition disabled:opacity-50"
+        >
+          {generatingType === 'flash' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+          Flash Report
+          {newAvailable.flash && !generating && (
+            <span className="absolute -top-2 -right-2 flex h-5 w-5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-5 w-5 bg-red-500 text-white text-xs items-center justify-center">!</span>
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => handleGenerate('daily')}
+          disabled={generating}
+          className="relative px-4 py-2 bg-gray-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-gray-800 transition disabled:opacity-50"
+        >
+          {generatingType === 'daily' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Calendar className="w-4 h-4" />}
+          Daily Brief
+          {newAvailable.daily && !generating && (
+            <span className="absolute -top-2 -right-2 flex h-5 w-5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-5 w-5 bg-red-500 text-white text-xs items-center justify-center">!</span>
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => handleGenerate('strategic')}
+          disabled={generating}
+          className="relative px-4 py-2 bg-amber-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-amber-800 transition disabled:opacity-50"
+        >
+          {generatingType === 'strategic' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <TrendingUp className="w-4 h-4" />}
+          Strategic Assessment
+          {newAvailable.strategic && !generating && (
+            <span className="absolute -top-2 -right-2 flex h-5 w-5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-5 w-5 bg-red-500 text-white text-xs items-center justify-center">!</span>
+            </span>
+          )}
+        </button>
       </div>
 
       {reports.length === 0 ? (

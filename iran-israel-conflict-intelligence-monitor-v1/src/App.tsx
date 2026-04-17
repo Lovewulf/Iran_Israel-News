@@ -1,36 +1,31 @@
 import { useEffect, useState } from "react";
-import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import { onAuthStateChanged } from "firebase/auth";
-import { auth, signInWithGoogle } from "./firebase";
-import React, { useEffect, useState } from 'react';
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { onAuthStateChanged, User } from 'firebase/auth';
-import { getAuthSafe } from './firebase';
-import { Layout } from './components/Layout';
-import { Dashboard } from './pages/Dashboard';
-import { LiveFeed } from './pages/LiveFeed';
-import { Timeline } from './pages/Timeline';
-import { AIReports } from './pages/AIReports';
-import { Sources } from './pages/Sources';
-import { EventClusterDetails } from './pages/EventClusterDetails';
-import { Diagnostics } from './components/Diagnostics';
-import { ShieldAlert, LogIn, Activity } from 'lucide-react';
-import { signInWithGoogle } from './firebase';
-import { firebaseClientStatus } from './config/env';
+import { auth, signInWithGoogle, getAuthSafe } from "./firebase";
+import { Layout } from "./components/Layout";
+import Dashboard from "./pages/Dashboard";
+import LiveFeed from "./pages/LiveFeed";
+import Timeline from "./pages/Timeline";
+import AIReports from "./pages/AIReports";
+import Sources from "./pages/Sources";
+import EventClusterDetails from "./pages/EventClusterDetails";
+import { Diagnostics } from "./components/Diagnostics";
+import { ShieldAlert, LogIn, Activity } from "lucide-react";
+import { firebaseClientStatus } from "./config/env";
+import { seedInitialData } from "./services/seedService";
 
-import { seedInitialData } from './services/seedService';
-
+// ========== Protected Route Component ==========
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const auth = getAuthSafe();
+  const authSafe = getAuthSafe();
 
   useEffect(() => {
-    if (!auth) {
+    if (!authSafe) {
       setLoading(false);
       return;
     }
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
+    const unsubscribe = onAuthStateChanged(authSafe, (u) => {
       setUser(u);
       setLoading(false);
       if (u) {
@@ -38,7 +33,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
       }
     });
     return () => unsubscribe();
-  }, [auth]);
+  }, [authSafe]);
 
   if (loading) {
     return (
@@ -55,6 +50,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return <Layout>{children}</Layout>;
 };
 
+// ========== Login Page ==========
 const LoginPage = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
@@ -62,13 +58,11 @@ const LoginPage = () => {
 
   useEffect(() => {
     if (!auth) return;
-
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         navigate("/", { replace: true });
       }
     });
-
     return () => unsubscribe();
   }, [navigate]);
 
@@ -122,6 +116,7 @@ const LoginPage = () => {
   );
 };
 
+// ========== Config Required Page ==========
 const ConfigRequiredPage = () => (
   <div className="h-screen flex items-center justify-center bg-background px-6">
     <div className="max-w-md w-full space-y-8 text-center">
@@ -152,6 +147,7 @@ const ConfigRequiredPage = () => (
   </div>
 );
 
+// ========== Main App Component ==========
 export default function App() {
   const location = useLocation();
   const isDiagnostics = location.pathname === '/diagnostics';

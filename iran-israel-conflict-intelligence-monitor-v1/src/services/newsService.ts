@@ -41,7 +41,38 @@ export async function getBreakingNews(): Promise<Article[]> {
   }
 }
 
-// Legacy function (if needed elsewhere)
-export async function getArticles(limitCount = 100): Promise<Article[]> {
-  return getLatestArticles(limitCount);
+// Generic getArticles with optional constraints
+export async function getArticles(
+  limitCount = 100,
+  constraints: any[] = []
+): Promise<Article[]> {
+  try {
+    let q = query(collection(db, 'articles'), orderBy('published_at', 'desc'), limit(limitCount));
+    if (constraints.length > 0) {
+      q = query(collection(db, 'articles'), orderBy('published_at', 'desc'), ...constraints, limit(limitCount));
+    }
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as Article[];
+  } catch (error) {
+    console.error('getArticles error:', error);
+    return [];
+  }
+}
+
+// Get single article by ID
+export async function getArticleById(id: string): Promise<Article | null> {
+  try {
+    const docRef = doc(db, 'articles', id);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return { id: docSnap.id, ...docSnap.data() } as Article;
+    }
+    return null;
+  } catch (error) {
+    console.error('getArticleById error:', error);
+    return null;
+  }
 }

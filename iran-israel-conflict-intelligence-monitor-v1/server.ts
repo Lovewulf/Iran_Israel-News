@@ -57,11 +57,16 @@ app.post('/api/generate-report', async (req, res) => {
     console.error('❌ Groq API error:', error);
     let errorMessage = 'Unknown error';
     if (error && typeof error === 'object') {
-      // Extract the most useful error message
       if ('message' in error && typeof error.message === 'string') {
         errorMessage = error.message;
-      } else if ('response' in error && error.response && typeof error.response.data === 'object') {
-        errorMessage = error.response.data?.error?.message || JSON.stringify(error.response.data);
+      } else if ('response' in error && error.response && typeof error.response === 'object') {
+        // Safely extract error from response
+        const response = error.response as any;
+        if (response.data && typeof response.data === 'object') {
+          errorMessage = response.data.error?.message || JSON.stringify(response.data);
+        } else {
+          errorMessage = String(response);
+        }
       }
     }
     res.status(500).json({ error: errorMessage });

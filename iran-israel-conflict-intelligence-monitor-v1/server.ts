@@ -17,7 +17,7 @@ app.use(express.json());
 // Serve static files from the same directory where server.js lives (which is dist/)
 app.use(express.static(__dirname));
 
-// ========== Groq AI Endpoint (replaces Gemini) ==========
+// ========== Groq AI Endpoint ==========
 app.post('/api/generate-report', async (req, res) => {
   const groqApiKey = process.env.GROQ_API_KEY;
   if (!groqApiKey) {
@@ -33,7 +33,7 @@ app.post('/api/generate-report', async (req, res) => {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
-    console.log('🤖 Generating AI report with Groq (llama3-70b-8192)...');
+    console.log('🤖 Generating AI report with Groq (llama-3.3-70b-versatile)...');
     const chatCompletion = await groq.chat.completions.create({
       messages: [
         {
@@ -45,7 +45,7 @@ app.post('/api/generate-report', async (req, res) => {
           content: prompt,
         },
       ],
-      model: 'llama3-70b-8192', // Fast, high-quality model with generous free tier
+      model: 'llama-3.3-70b-versatile', // ✅ updated from deprecated llama3-70b-8192
       temperature: 0.5,
       max_tokens: 1500,
     });

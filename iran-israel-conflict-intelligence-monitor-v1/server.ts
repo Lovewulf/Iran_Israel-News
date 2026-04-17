@@ -12,9 +12,15 @@ const port = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(__dirname));
 
-// ========== OpenRouter AI Endpoint ==========
+// ========== API Routes (must come before static file serving) ==========
+
+// Test endpoint to verify server is alive
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// OpenRouter AI Endpoint
 app.post('/api/generate-report', async (req, res) => {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -28,13 +34,12 @@ app.post('/api/generate-report', async (req, res) => {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
-    // Truncate prompt to avoid token limits
     if (prompt.length > 4000) {
       console.log(`⚠️ Prompt truncated from ${prompt.length} to 4000 chars`);
       prompt = prompt.substring(0, 4000);
     }
 
-    console.log(`🤖 Generating report with OpenRouter (prompt length: ${prompt.length})...`);
+    console.log(`🤖 Generating report with Gemma 2 9B (prompt length: ${prompt.length})...`);
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -44,7 +49,7 @@ app.post('/api/generate-report', async (req, res) => {
         'X-Title': 'Iran-Israel Conflict Monitor',
       },
       body: JSON.stringify({
-         model: 'google/gemma-2-9b-it:free',
+        model: 'google/gemma-2-9b-it:free',
         messages: [
           {
             role: 'system',
@@ -76,7 +81,7 @@ app.post('/api/generate-report', async (req, res) => {
   }
 });
 
-// ========== Ingestion endpoint ==========
+// Ingestion endpoint
 app.post('/api/ingest', async (req, res) => {
   try {
     console.log('🔄 Manual ingestion');
@@ -89,12 +94,10 @@ app.post('/api/ingest', async (req, res) => {
   }
 });
 
-// ========== Health check ==========
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok' });
-});
+// ========== Serve static frontend files (catch-all after API routes) ==========
+app.use(express.static(__dirname));
 
-// ========== Serve React app ==========
+// For any other route, serve index.html (client-side routing)
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });

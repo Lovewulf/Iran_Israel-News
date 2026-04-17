@@ -346,3 +346,4 @@ export const Sources = () => {
     </div>
   );
 };
+export default Sources;

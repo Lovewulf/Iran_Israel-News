@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 import { runFullIngestion } from './src/services/ingestionService.js';
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = path.dirname(__filename); // this is the 'dist' folder
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -35,7 +35,6 @@ app.post('/api/generate-report', async (req, res) => {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
-    // Truncate prompt to avoid token limits
     if (prompt.length > 4000) {
       console.log(`⚠️ Prompt truncated from ${prompt.length} to 4000 chars`);
       prompt = prompt.substring(0, 4000);
@@ -97,12 +96,12 @@ app.post('/api/ingest', async (req, res) => {
 });
 
 // ========== Serve Static Frontend Files (after API routes) ==========
-// Serve the built React app from the 'dist' directory
-app.use(express.static(path.join(__dirname, 'dist')));
+// __dirname is already the 'dist' folder (where server.js lives)
+app.use(express.static(__dirname));
 
 // Catch-all route for client-side routing (must be last)
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 // ========== Scheduled Background Tasks ==========

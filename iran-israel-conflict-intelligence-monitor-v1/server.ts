@@ -55,13 +55,16 @@ app.post('/api/generate-report', async (req, res) => {
     res.json({ content: text });
   } catch (error) {
     console.error('❌ Groq API error:', error);
+    // Safe error message extraction – works with any error type
     let errorMessage = 'Unknown error';
-    if (error && typeof error === 'object') {
-      if ('message' in error && typeof error.message === 'string') {
-        errorMessage = error.message;
-      } else if ('response' in error && error.response && typeof error.response.data === 'object') {
-        errorMessage = error.response.data?.error?.message || JSON.stringify(error.response.data);
-      }
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    } else if (typeof error === 'string') {
+      errorMessage = error;
+    } else if (error && typeof error === 'object') {
+      // Try to get message property if it exists
+      const maybeMessage = (error as any).message;
+      if (typeof maybeMessage === 'string') errorMessage = maybeMessage;
     }
     res.status(500).json({ error: errorMessage });
   }
@@ -76,8 +79,10 @@ app.post('/api/ingest', async (req, res) => {
   } catch (error) {
     console.error('❌ Ingestion failed:', error);
     let errorMessage = 'Unknown error';
-    if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
-      errorMessage = error.message;
+    if (error instanceof Error) errorMessage = error.message;
+    else if (typeof error === 'string') errorMessage = error;
+    else if (error && typeof error === 'object' && 'message' in error && typeof (error as any).message === 'string') {
+      errorMessage = (error as any).message;
     }
     res.status(500).json({ success: false, error: errorMessage });
   }

@@ -2,15 +2,15 @@ import { createClient } from '@supabase/supabase-js';
 import axios from 'axios';
 import Parser from 'rss-parser';
 
-// ========== Supabase Client Setup ==========
+// Supabase client setup
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!supabaseUrl || !supabaseServiceKey) {
-  throw new Error('Missing Supabase environment variables. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
+  throw new Error('Missing Supabase environment variables');
 }
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// ========== User-Agent Rotation (avoid blocking) ==========
+// User-Agent rotation
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -20,13 +20,11 @@ const USER_AGENTS = [
 ];
 const getRandomUserAgent = () => USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 
-// ========== RSS Parser with custom timeout and headers ==========
 const parser = new Parser({
   timeout: 15000,
   headers: { 'User-Agent': getRandomUserAgent() },
 });
 
-// ========== Helper: Fetch RSS with retries ==========
 async function fetchFeedWithRetry(url: string, maxRetries = 2): Promise<any> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -46,7 +44,6 @@ async function fetchFeedWithRetry(url: string, maxRetries = 2): Promise<any> {
   throw lastError;
 }
 
-// ========== Helper: Extract image from item or HTML ==========
 async function extractImageUrl(item: any, link: string): Promise<string> {
   if (item.enclosure?.url) return item.enclosure.url;
   if (item['media:content']?.['$']?.url) return item['media:content']['$'].url;
@@ -64,8 +61,7 @@ async function extractImageUrl(item: any, link: string): Promise<string> {
   return '';
 }
 
-// ========== Helper: Process a single feed and insert articles ==========
-async function processFeed(sourceName: string, feedUrl: string, maxItems = 8): Promise<number> {
+async function processFeed(sourceName: string, feedUrl: string, maxItems = 6): Promise<number> {
   let addedCount = 0;
   try {
     console.log(`🔍 Processing ${sourceName} from: ${feedUrl}`);
@@ -77,11 +73,8 @@ async function processFeed(sourceName: string, feedUrl: string, maxItems = 8): P
     }
     for (const item of items) {
       if (!item.link) continue;
-
-      // Avoid duplicates
       const { data: existing } = await supabase.from('articles').select('url').eq('url', item.link);
       if (existing && existing.length > 0) continue;
-
       const imageUrl = await extractImageUrl(item, item.link);
       const title = item.title?.trim() || 'No title';
       const content = item.content || item.contentSnippet || '';
@@ -89,7 +82,6 @@ async function processFeed(sourceName: string, feedUrl: string, maxItems = 8): P
       const publishedAt = item.isoDate ? new Date(item.isoDate).toISOString() : new Date().toISOString();
       const now = new Date().toISOString();
       const fingerprint = Buffer.from(`${item.link}${title}`).toString('base64');
-
       const article = {
         title,
         content,
@@ -108,7 +100,6 @@ async function processFeed(sourceName: string, feedUrl: string, maxItems = 8): P
         content_origin: 'live_rss',
         is_verified: false,
       };
-
       const { error } = await supabase.from('articles').insert(article);
       if (error) {
         console.error(`Insert error for ${title}:`, error.message);
@@ -124,12 +115,10 @@ async function processFeed(sourceName: string, feedUrl: string, maxItems = 8): P
   return addedCount;
 }
 
-// ========== Main Ingestion Function ==========
 export async function runFullIngestion() {
   console.log('📡 Starting full news ingestion with fallbacks...');
   let totalAdded = 0;
 
-  // Define feed groups – each group is tried in order until one works
   const feedGroups = [
     {
       name: 'Iran General News',
@@ -137,7 +126,6 @@ export async function runFullIngestion() {
         'https://news.google.com/rss/search?q=iran&hl=en-US&gl=US&ceid=US:en',
         'https://rss.nytimes.com/services/xml/rss/nyt/Iran.xml',
         'https://feeds.bbci.co.uk/news/world/middle_east/iran/rss.xml',
-        'https://www.aljazeera.com/xml/rss/iran.xml',
       ],
     },
     {
@@ -180,27 +168,19 @@ export async function runFullIngestion() {
     },
     {
       name: 'Geo News (Pakistan)',
-      feeds: [
-        'https://www.geo.tv/rss/1',
-      ],
+      feeds: ['https://www.geo.tv/rss/1'],
     },
     {
       name: 'The Express Tribune (Pakistan)',
-      feeds: [
-        'https://tribune.com.pk/feed/',
-      ],
+      feeds: ['https://tribune.com.pk/feed/'],
     },
     {
       name: 'Pakistan Today',
-      feeds: [
-        'https://www.pakistantoday.com.pk/feed/',
-      ],
+      feeds: ['https://www.pakistantoday.com.pk/feed/'],
     },
     {
       name: 'The News International (Pakistan)',
-      feeds: [
-        'https://www.thenews.com.pk/feed',
-      ],
+      feeds: ['https://www.thenews.com.pk/feed'],
     },
     {
       name: 'Middle East General',

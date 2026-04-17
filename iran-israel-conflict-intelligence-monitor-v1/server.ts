@@ -3,6 +3,7 @@ import cors from 'cors';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { runFullIngestion } from './src/services/ingestionService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,6 +44,27 @@ app.post('/api/generate-report', async (req, res) => {
   }
 });
 
+// Ingestion endpoint (manual trigger)
+app.post('/api/ingest', async (req, res) => {
+  try {
+    console.log('🔄 Manual ingestion triggered at', new Date().toISOString());
+    const result = await runFullIngestion();
+    res.json({
+      success: true,
+      message: 'Ingestion completed successfully',
+      totalAdded: result.totalAdded,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('❌ Ingestion failed:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Ingestion failed',
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -56,4 +78,5 @@ app.get('*', (req, res) => {
 app.listen(port, () => {
   console.log(`✅ Server running on port ${port}`);
   console.log(`📍 Health: http://localhost:${port}/api/health`);
+  console.log(`📍 Ingestion: POST http://localhost:${port}/api/ingest`);
 });

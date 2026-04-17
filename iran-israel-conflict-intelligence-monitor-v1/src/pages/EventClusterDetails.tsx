@@ -262,4 +262,4 @@ export const EventClusterDetails = () => {
   );
 };
 
-export default EventClusterDetails;
+

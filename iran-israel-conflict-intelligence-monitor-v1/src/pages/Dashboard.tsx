@@ -3,6 +3,17 @@ import { getBreakingNews, getLatestArticles } from '../services/newsService';
 import type { Article } from '../types';
 import { Link } from 'react-router-dom';
 
+// Helper to safely format any date value (string, Date, or null)
+const formatDate = (dateValue: any) => {
+  if (!dateValue) return 'Unknown date';
+  try {
+    const d = new Date(dateValue);
+    return d.toLocaleString();
+  } catch {
+    return 'Invalid date';
+  }
+};
+
 export default function Dashboard() {
   const [breaking, setBreaking] = useState<Article[]>([]);
   const [recent, setRecent] = useState<Article[]>([]);
@@ -28,8 +39,6 @@ export default function Dashboard() {
       }
     }
     loadDashboard();
-
-    // Auto-refresh every 2 minutes
     const interval = setInterval(loadDashboard, 120000);
     return () => clearInterval(interval);
   }, []);
@@ -59,7 +68,6 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
-      {/* Header */}
       <div className="border-b pb-4">
         <h1 className="text-3xl font-bold text-gray-900">Iran–Israel Conflict Monitor</h1>
         <p className="text-gray-600 mt-1">Real‑time intelligence & news dashboard</p>
@@ -74,7 +82,6 @@ export default function Dashboard() {
             {breaking.length} updates
           </span>
         </div>
-
         {breaking.length === 0 ? (
           <div className="bg-gray-50 rounded-lg p-8 text-center text-gray-500 border border-dashed">
             <p>No breaking news at this moment.</p>
@@ -111,7 +118,7 @@ export default function Dashboard() {
                   </p>
                   <div className="mt-3 text-xs text-gray-400 flex justify-between items-center">
                     <span className="bg-gray-100 px-2 py-1 rounded">{article.source_name}</span>
-                    <span>{new Date(article.published_at?.toDate()).toLocaleTimeString()}</span>
+                    <span>{formatDate(article.published_at)}</span>
                   </div>
                 </div>
               </a>
@@ -156,7 +163,7 @@ export default function Dashboard() {
                   <div className="mt-2 text-xs text-gray-400 flex gap-3">
                     <span>{article.source_name}</span>
                     <span>•</span>
-                    <span>{new Date(article.published_at?.toDate()).toLocaleString()}</span>
+                    <span>{formatDate(article.published_at)}</span>
                     {article.is_breaking && (
                       <span className="text-red-600 font-semibold">● Breaking</span>
                     )}

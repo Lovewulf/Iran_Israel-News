@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Database, Plus, Edit2, Trash2, Activity, RefreshCw, Globe, Rss, Youtube, FileText, CheckCircle, XCircle, AlertCircle, Shield } from 'lucide-react';
 import { Source } from '../types';
 import { getSources, addSource, updateSource, deleteSource, testSourceConnection } from '../services/firestoreService';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
 
 const sourceIcons = {

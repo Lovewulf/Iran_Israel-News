@@ -7,7 +7,6 @@ import Timeline from "./pages/Timeline";
 import AIReports from "./pages/AIReports";
 import Sources from "./pages/Sources";
 import EventClusterDetails from "./pages/EventClusterDetails";
-import { Diagnostics } from "./components/Diagnostics";
 import { ShieldAlert, LogIn, Activity } from "lucide-react";
 import { signInWithGoogle, onAuthStateChange, getCurrentUser } from "./services/authService";
 import { supabase } from "./lib/supabaseClient";
@@ -127,12 +126,11 @@ const ConfigRequiredPage = () => (
 // ========== Main App Component ==========
 export default function App() {
   const location = useLocation();
-  const isDiagnostics = location.pathname === '/diagnostics';
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-  if ((!supabaseUrl || !supabaseKey) && !isDiagnostics) {
+  if (!supabaseUrl || !supabaseKey) {
     return <ConfigRequiredPage />;
   }
 
@@ -145,7 +143,6 @@ export default function App() {
       <Route path="/reports" element={<ProtectedRoute><AIReports /></ProtectedRoute>} />
       <Route path="/sources" element={<ProtectedRoute><Sources /></ProtectedRoute>} />
       <Route path="/cluster/:id" element={<ProtectedRoute><EventClusterDetails /></ProtectedRoute>} />
-      <Route path="/diagnostics" element={<Diagnostics />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

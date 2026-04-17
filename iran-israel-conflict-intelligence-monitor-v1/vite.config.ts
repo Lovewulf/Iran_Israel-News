@@ -5,7 +5,7 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  envPrefix: ['VITE_'], // Only expose env vars starting with VITE_
+  envPrefix: ['VITE_'],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, '.'),
@@ -13,5 +13,8 @@ export default defineConfig({
   },
   server: {
     hmr: process.env.DISABLE_HMR !== 'true',
+  },
+  optimizeDeps: {
+    include: ['framer-motion'],
   },
 });

@@ -1,180 +1,133 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Activity, 
-  Search, 
-  Filter, 
-  RefreshCw, 
-  ExternalLink, 
-  Clock, 
-  AlertCircle,
-  ChevronRight
-} from 'lucide-react';
-import { Article } from '../types';
-import { subscribeToArticles } from '../services/firestoreService';
-import { refreshSources } from '../services/ingestionService';
-import { motion, AnimatePresence } from 'motion/react';
-import { cn } from '../lib/utils';
-import { SourceBadge } from '../components/SourceBadge';
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { getLatestArticles, Article } from '../services/newsService';
 
-export const LiveFeed = () => {
+export default function LiveFeed() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState(1);
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const lastArticleRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    const unsubscribe = subscribeToArticles((newArticles) => {
-      setArticles(newArticles);
+  const ARTICLES_PER_PAGE = 20;
+
+  const loadArticles = useCallback(async (pageNum: number, reset = false) => {
+    try {
+      const allArticles = await getLatestArticles(pageNum * ARTICLES_PER_PAGE);
+      const newArticles = allArticles.slice((pageNum - 1) * ARTICLES_PER_PAGE, pageNum * ARTICLES_PER_PAGE);
+      
+      if (reset) {
+        setArticles(newArticles);
+      } else {
+        setArticles(prev => [...prev, ...newArticles]);
+      }
+      
+      setHasMore(newArticles.length === ARTICLES_PER_PAGE);
+    } catch (error) {
+      console.error('Failed to load articles:', error);
+    } finally {
       setLoading(false);
-    }, 50);
-    return () => unsubscribe();
+    }
   }, []);
 
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    try {
-      await refreshSources();
-    } catch (error) {
-      console.error('Refresh failed:', error);
-    } finally {
-      setRefreshing(false);
-    }
-  };
+  useEffect(() => {
+    loadArticles(1, true);
+  }, []);
 
-  const filteredArticles = articles
-    .filter(a => 
-      a.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      a.source_name.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-    .sort((a, b) => {
-      // Prioritize live RSS
-      if (a.content_origin === 'live_rss' && b.content_origin !== 'live_rss') return -1;
-      if (a.content_origin !== 'live_rss' && b.content_origin === 'live_rss') return 1;
-      return 0;
+  useEffect(() => {
+    if (observerRef.current) observerRef.current.disconnect();
+    
+    observerRef.current = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && hasMore && !loading) {
+        setPage(prev => prev + 1);
+        loadArticles(page + 1);
+      }
     });
+    
+    if (lastArticleRef.current) {
+      observerRef.current.observe(lastArticleRef.current);
+    }
+    
+    return () => observerRef.current?.disconnect();
+  }, [hasMore, loading, page, loadArticles]);
+
+  if (loading && articles.length === 0) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-10">
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div>
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
-            <span className="text-[10px] font-black text-primary uppercase tracking-[0.3em]">Real-Time Signal Intelligence</span>
-          </div>
-          <h1 className="text-5xl font-black tracking-tighter uppercase leading-none">Live Intel Feed</h1>
-          <p className="text-white/40 mt-4 max-w-xl text-sm font-medium leading-relaxed">
-            Continuous monitoring of global news cycles, social signals, and official reports. 
-            Filtered for strategic relevance and regional impact.
-          </p>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="relative group">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 group-focus-within:text-primary transition-colors" />
-            <input 
-              type="text" 
-              placeholder="FILTER SIGNALS..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-12 pr-6 py-4 bg-zinc-900 border border-white/5 rounded-2xl text-[10px] font-black uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-primary/50 w-72 transition-all"
-            />
-          </div>
-          <button 
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="p-4 bg-primary text-white rounded-2xl hover:scale-105 transition-all disabled:opacity-50 shadow-[0_0_20px_rgba(239,68,68,0.3)]"
+    <div className="max-w-4xl mx-auto space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900">Live News Feed</h1>
+        <p className="text-gray-600 mt-1">Real-time updates from global news sources</p>
+      </div>
+
+      <div className="space-y-4">
+        {articles.map((article, index) => (
+          <article
+            key={article.id}
+            ref={index === articles.length - 1 ? lastArticleRef : null}
+            className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition"
           >
-            <RefreshCw className={cn("w-5 h-5", refreshing && "animate-spin")} />
-          </button>
-        </div>
-      </header>
-
-      <div className="grid grid-cols-1 gap-6">
-        <AnimatePresence mode="popLayout">
-          {filteredArticles.map((article, idx) => (
-            <motion.div
-              key={article.id}
-              layout
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ delay: Math.min(idx * 0.05, 0.5) }}
-              className={cn(
-                "bg-zinc-900/50 border border-white/5 rounded-[2rem] p-8 hover:border-primary/30 transition-all group relative overflow-hidden backdrop-blur-sm",
-                article.is_breaking && "border-primary/40 bg-primary/5 shadow-[0_0_30px_rgba(239,68,68,0.1)]"
-              )}
-            >
-              <div className="scanline opacity-5" />
-              
-              <div className="flex flex-col md:flex-row gap-10 relative z-10">
-                <div className="flex-1 space-y-6">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <SourceBadge origin={article.content_origin} isVerified={article.is_verified} />
-                      <span className={cn(
-                        "text-[9px] font-black uppercase tracking-[0.2em] px-3 py-1 rounded-lg",
-                        article.is_breaking ? "bg-primary text-white shadow-[0_0_10px_rgba(239,68,68,0.4)]" : "bg-white/5 text-white/60"
-                      )}>
-                        {article.source_name}
-                      </span>
-                      <span className="text-[9px] font-bold text-white/30 uppercase tracking-[0.2em] flex items-center gap-2">
-                        <Clock className="w-3.5 h-3.5" />
-                        {article.published_at.toDate().toLocaleString()}
-                      </span>
-                    </div>
-                    {article.is_breaking && (
-                      <div className="flex items-center gap-2 text-[9px] font-black text-primary uppercase tracking-[0.3em] animate-pulse">
-                        <AlertCircle className="w-4 h-4" />
-                        <span>Breaking Intelligence</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <h3 className="text-2xl font-black tracking-tighter leading-tight group-hover:text-primary transition-colors uppercase italic">
-                    {article.title}
-                  </h3>
-                  <p className="text-white/50 text-base leading-relaxed line-clamp-3 font-medium">
-                    {article.summary || article.content}
-                  </p>
-
-                  <div className="flex items-center gap-6 pt-4">
-                    <a 
-                      href={article.url} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="text-[10px] font-black text-primary hover:text-white flex items-center gap-2 uppercase tracking-[0.2em] transition-colors"
-                    >
-                      Source Report <ExternalLink className="w-4 h-4" />
-                    </a>
-                    <button className="text-[10px] font-black text-white/40 hover:text-primary flex items-center gap-2 uppercase tracking-[0.2em] transition-colors">
-                      Context Analysis <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-
-                {article.image_url && (
-                  <div className="w-full md:w-72 h-48 rounded-[1.5rem] overflow-hidden border border-white/10 flex-shrink-0 relative group-hover:border-primary/30 transition-colors">
-                    <img 
-                      src={article.image_url} 
-                      alt={article.title}
-                      className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700 group-hover:scale-110 opacity-60 group-hover:opacity-100"
-                      referrerPolicy="no-referrer"
+            <a href={article.link} target="_blank" rel="noopener noreferrer" className="block">
+              <div className="md:flex">
+                {article.imageUrl && (
+                  <div className="md:w-48 h-48 md:h-auto">
+                    <img
+                      src={article.imageUrl}
+                      alt=""
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none';
+                      }}
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
                 )}
+                <div className="p-5 flex-1">
+                  <div className="flex items-center gap-2 text-xs text-gray-500 mb-2">
+                    <span className="bg-gray-100 px-2 py-1 rounded">{article.source}</span>
+                    <span>•</span>
+                    <span>{new Date(article.publishedAt).toLocaleString()}</span>
+                    {article.isBreaking && (
+                      <span className="bg-red-100 text-red-700 px-2 py-1 rounded font-semibold">BREAKING</span>
+                    )}
+                  </div>
+                  <h2 className="text-xl font-bold text-gray-900 mb-2 hover:text-blue-600">
+                    {article.title}
+                  </h2>
+                  <p className="text-gray-600 line-clamp-3">{article.summary}</p>
+                  <div className="mt-3 text-blue-500 text-sm font-medium">
+                    Read full article →
+                  </div>
+                </div>
               </div>
-            </motion.div>
-          ))}
-        </AnimatePresence>
-
-        {filteredArticles.length === 0 && !loading && (
-          <div className="py-32 text-center border-2 border-dashed border-white/5 rounded-[2.5rem] bg-zinc-900/20">
-            <Activity className="w-16 h-16 text-white/10 mx-auto mb-6" />
-            <h3 className="text-xl font-black tracking-tighter text-white/40 uppercase">No matching signals detected</h3>
-            <p className="text-sm text-white/20 mt-2 font-medium">Adjust filter parameters or re-synchronize feed.</p>
-          </div>
-        )}
+            </a>
+          </article>
+        ))}
       </div>
+
+      {loading && articles.length > 0 && (
+        <div className="flex justify-center py-4">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
+        </div>
+      )}
+
+      {!hasMore && articles.length > 0 && (
+        <div className="text-center text-gray-500 py-8">
+          You've reached the end – no more articles.
+        </div>
+      )}
+
+      {articles.length === 0 && !loading && (
+        <div className="text-center text-gray-500 py-12 bg-gray-50 rounded-lg">
+          <p className="text-lg">No news articles yet.</p>
+          <p className="text-sm mt-2">Run the ingestion endpoint to fetch latest news.</p>
+        </div>
+      )}
     </div>
   );
-};
+}

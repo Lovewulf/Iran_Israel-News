@@ -13,16 +13,14 @@ const port = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
-
-// Serve static files from the same directory where server.js lives (which is dist/)
 app.use(express.static(__dirname));
 
 // ========== Groq AI Endpoint ==========
 app.post('/api/generate-report', async (req, res) => {
   const groqApiKey = process.env.GROQ_API_KEY;
   if (!groqApiKey) {
-    console.error('❌ GROQ_API_KEY is not set in environment');
-    return res.status(500).json({ error: 'GROQ_API_KEY not configured. Please set it in Render environment.' });
+    console.error('❌ GROQ_API_KEY is not set');
+    return res.status(500).json({ error: 'GROQ_API_KEY not configured' });
   }
 
   const groq = new Groq({ apiKey: groqApiKey });
@@ -33,110 +31,74 @@ app.post('/api/generate-report', async (req, res) => {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
-    console.log('🤖 Generating AI report with Groq (llama-3.3-70b-versatile)...');
+    console.log('🤖 Generating AI report...');
     const chatCompletion = await groq.chat.completions.create({
       messages: [
-        {
-          role: 'system',
-          content: 'You are an expert geopolitical intelligence analyst. Provide concise, factual, and structured reports based on the news provided.'
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
+        { role: 'system', content: 'You are an expert geopolitical intelligence analyst.' },
+        { role: 'user', content: prompt },
       ],
-      model: 'llama-3.3-70b-versatile', // Updated model
+      model: 'llama-3.3-70b-versatile',
       temperature: 0.5,
       max_tokens: 1500,
     });
 
     const text = chatCompletion.choices[0]?.message?.content || '';
-    if (!text) {
-      throw new Error('Empty response from Groq');
-    }
+    if (!text) throw new Error('Empty response');
 
-    console.log('✅ AI report generated successfully');
+    console.log('✅ Report generated');
     res.json({ content: text });
   } catch (error) {
-    console.error('❌ Error generating content with Groq:', error);
-    // Safely access error properties by checking the type
+    console.error('❌ Error:', error);
+    // Safely handle unknown error type
+    let errorMessage = 'Unknown error';
     if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
-      const errorMessage = error.message;
-      if (errorMessage.includes('API key')) {
-        res.status(401).json({ error: 'Invalid Groq API key. Please check your credentials.' });
-      } else if (errorMessage.includes('rate') || errorMessage.includes('quota')) {
-        res.status(429).json({ error: 'Groq API rate limit reached. Please try again later.' });
-      } else {
-        res.status(500).json({ error: errorMessage || 'Failed to generate content' });
-      }
-    } else {
-      res.status(500).json({ error: 'An unknown error occurred' });
+      errorMessage = error.message;
     }
+    res.status(500).json({ error: errorMessage });
   }
 });
 
-// ========== Ingestion endpoint (manual trigger) ==========
+// ========== Ingestion endpoint ==========
 app.post('/api/ingest', async (req, res) => {
   try {
-    console.log('🔄 Manual ingestion triggered at', new Date().toISOString());
+    console.log('🔄 Manual ingestion');
     const result = await runFullIngestion();
-    res.json({
-      success: true,
-      message: 'Ingestion completed successfully',
-      totalAdded: result.totalAdded,
-      timestamp: new Date().toISOString(),
-    });
+    res.json({ success: true, totalAdded: result.totalAdded });
   } catch (error) {
     console.error('❌ Ingestion failed:', error);
-    const errorMessage = error && typeof error === 'object' && 'message' in error && typeof error.message === 'string' ? error.message : String(error);
-    res.status(500).json({
-      success: false,
-      message: 'Ingestion failed',
-      error: errorMessage,
-    });
+    let errorMessage = 'Unknown error';
+    if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
+      errorMessage = error.message;
+    }
+    res.status(500).json({ success: false, error: errorMessage });
   }
 });
 
 // ========== Health check ==========
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok' });
 });
 
-// ========== Serve React app (catch-all) ==========
+// ========== Serve React app ==========
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// ========== Automatic Scheduled Ingestion ==========
-// Run once on startup
+// ========== Scheduled ingestion ==========
 (async () => {
-  console.log('🚀 Running initial ingestion on server start...');
+  console.log('🚀 Initial ingestion...');
   try {
     const result = await runFullIngestion();
-    console.log(`✅ Initial ingestion added ${result.totalAdded} articles.`);
-  } catch (err) {
-    console.error('❌ Initial ingestion failed:', err);
-  }
+    console.log(`✅ Added ${result.totalAdded} articles.`);
+  } catch (err) { console.error('❌ Failed'); }
 })();
 
-// Schedule ingestion every 15 minutes
-const INGESTION_INTERVAL_MS = 15 * 60 * 1000;
 setInterval(async () => {
-  console.log('⏰ Scheduled ingestion running...');
+  console.log('⏰ Scheduled ingestion...');
   try {
     const result = await runFullIngestion();
-    console.log(`✅ Scheduled ingestion added ${result.totalAdded} new articles.`);
-  } catch (err) {
-    console.error('❌ Scheduled ingestion failed:', err);
-  }
-}, INGESTION_INTERVAL_MS);
+    console.log(`✅ Added ${result.totalAdded} articles.`);
+  } catch (err) { console.error('❌ Failed'); }
+}, 15 * 60 * 1000);
 
-console.log(`⏲️ Scheduled ingestion will run every ${INGESTION_INTERVAL_MS / 60000} minutes.`);
-
-// ========== Start Server ==========
-app.listen(port, () => {
-  console.log(`✅ Server running on port ${port}`);
-  console.log(`📍 Health: http://localhost:${port}/api/health`);
-  console.log(`📍 Ingestion: POST http://localhost:${port}/api/ingest (manual)`);
-  console.log(`📍 AI reports: POST http://localhost:${port}/api/generate-report (via Groq)`);
-});
+app.listen(port, () => console.log(`✅ Server on port ${port}`));

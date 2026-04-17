@@ -8,7 +8,7 @@ import AIReports from "./pages/AIReports";
 import Sources from "./pages/Sources";
 import EventClusterDetails from "./pages/EventClusterDetails";
 import { ShieldAlert, LogIn, Activity } from "lucide-react";
-import { signInWithGoogle, onAuthStateChange, getCurrentUser } from "./services/authService";
+import { signInWithGoogle, getCurrentUser } from "./services/authService";
 import { supabase } from "./lib/supabaseClient";
 
 // ========== Protected Route Component ==========

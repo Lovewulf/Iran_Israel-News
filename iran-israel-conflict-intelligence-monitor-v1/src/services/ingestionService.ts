@@ -1,5 +1,5 @@
-import { db } from '../firebase-admin'; // Use admin SDK for server-side
-import { collection, addDoc, query, where, getDocs, Timestamp } from 'firebase/firestore';
+import { getAdminDbSafe } from '../firebase-admin';
+import { collection, addDoc, query, where, getDocs, Timestamp } from 'firebase-admin/firestore';
 import axios from 'axios';
 import Parser from 'rss-parser';
 
@@ -17,16 +17,11 @@ const NEWS_SOURCES = [
 
 // Helper to extract image URL from item
 async function extractImageUrl(item: any, link: string): Promise<string> {
-  // Check enclosure
   if (item.enclosure?.url) return item.enclosure.url;
-  
-  // Check content for img tag
   if (item.content) {
     const imgMatch = item.content.match(/<img[^>]+src="([^">]+)"/);
     if (imgMatch) return imgMatch[1];
   }
-  
-  // Try to fetch OG image from the article page
   if (link) {
     try {
       const response = await axios.get(link, { timeout: 5000 });
@@ -36,11 +31,16 @@ async function extractImageUrl(item: any, link: string): Promise<string> {
       // ignore fetch errors
     }
   }
-  
-  return ''; // no image found
+  return '';
 }
 
 export async function runFullIngestion() {
+  const db = getAdminDbSafe();
+  if (!db) {
+    console.error('❌ Firebase Admin not initialized. Cannot run ingestion.');
+    throw new Error('Firebase Admin not configured');
+  }
+
   console.log('📡 Starting news ingestion...');
   let totalAdded = 0;
 
@@ -49,7 +49,7 @@ export async function runFullIngestion() {
       console.log(`Fetching from ${source.name}...`);
       const feed = await parser.parseURL(source.url);
       
-      for (const item of feed.items.slice(0, 10)) { // latest 10 per source
+      for (const item of feed.items.slice(0, 10)) {
         // Check for duplicate by link
         const existingQuery = query(collection(db, 'articles'), where('url', '==', item.link));
         const existing = await getDocs(existingQuery);
@@ -63,7 +63,7 @@ export async function runFullIngestion() {
           summary: item.contentSnippet || item.content?.slice(0, 300) || '',
           url: item.link,
           source_name: source.name,
-          source_type: 'rss' as const,
+          source_type: 'rss',
           published_at: item.isoDate ? new Date(item.isoDate) : Timestamp.now(),
           ingested_at: Timestamp.now(),
           first_seen_at: Timestamp.now(),
@@ -71,8 +71,8 @@ export async function runFullIngestion() {
           fingerprint: Buffer.from(item.link + item.title).toString('base64'),
           tag_ids: [],
           image_url: imageUrl,
-          is_breaking: false, // could be enhanced with keyword detection
-          content_origin: 'live_rss' as const,
+          is_breaking: false,
+          content_origin: 'live_rss',
           is_verified: false
         };
 
@@ -87,11 +87,4 @@ export async function runFullIngestion() {
   
   console.log(`🏁 Ingestion finished. Added ${totalAdded} new articles.`);
   return { totalAdded };
-}
-
-// Optional: run scheduled ingestion (for serverless functions)
-export async function scheduledIngestion() {
-  const result = await runFullIngestion();
-  console.log(`Scheduled ingestion complete: ${result.totalAdded} new articles`);
-  return result;
 }

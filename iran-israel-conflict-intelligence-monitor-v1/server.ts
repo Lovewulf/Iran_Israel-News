@@ -1,62 +1,70 @@
-import express from "express";
-import { createServer as createViteServer } from "vite";
-import path from "path";
-import { fileURLToPath } from "url";
-import dotenv from "dotenv";
-import Parser from "rss-parser";
-
-dotenv.config();
+import express from 'express';
+import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { runFullIngestion } from './src/services/ingestionService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const parser = new Parser();
+const app = express();
+const PORT = process.env.PORT || 3001;
 
-async function startServer() {
-  const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+// Middleware
+app.use(cors());
+app.use(express.json());
 
-  app.use(express.json());
+// Serve static files from the dist directory (after build)
+app.use(express.static(path.join(__dirname, 'dist')));
 
-  // API Routes
-  app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
-  });
+// ============ API Routes ============
 
-  // RSS Proxy to avoid CORS
-  app.get("/api/proxy/rss", async (req, res) => {
-    const { url } = req.query;
-    if (!url || typeof url !== 'string') {
-      return res.status(400).json({ error: "URL is required" });
-    }
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
-    try {
-      const feed = await parser.parseURL(url);
-      res.json(feed);
-    } catch (error) {
-      console.error(`Error fetching RSS from ${url}:`, error);
-      res.status(500).json({ error: "Failed to fetch RSS feed" });
-    }
-  });
-
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
+// Manual ingestion trigger
+app.post('/api/ingest', async (req, res) => {
+  try {
+    console.log('🔄 Manual ingestion triggered at', new Date().toISOString());
+    const result = await runFullIngestion();
+    res.json({
+      success: true,
+      message: 'Ingestion completed successfully',
+      totalAdded: result.totalAdded,
+      timestamp: new Date().toISOString()
     });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+  } catch (error) {
+    console.error('❌ Ingestion failed:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Ingestion failed',
+      error: error instanceof Error ? error.message : String(error)
     });
   }
+});
 
-  app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on port ${PORT}`);
-  });
-}
+// Optional: Scheduled ingestion endpoint (can be called by cron job)
+app.post('/api/ingest/scheduled', async (req, res) => {
+  try {
+    console.log('⏰ Scheduled ingestion triggered');
+    const result = await runFullIngestion();
+    res.json({ success: true, totalAdded: result.totalAdded });
+  } catch (error) {
+    console.error('Scheduled ingestion failed:', error);
+    res.status(500).json({ success: false, error: String(error) });
+  }
+});
 
-startServer();
+// Catch-all: serve React app for any other route
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
+// Start server
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📍 Health check: http://localhost:${PORT}/api/health`);
+  console.log(`📍 Ingestion endpoint: POST http://localhost:${PORT}/api/ingest`);
+});

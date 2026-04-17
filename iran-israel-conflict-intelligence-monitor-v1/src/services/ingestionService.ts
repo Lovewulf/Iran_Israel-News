@@ -2,30 +2,31 @@ import { createClient } from '@supabase/supabase-js';
 import axios from 'axios';
 import Parser from 'rss-parser';
 
-// Supabase client setup
+// ========== Supabase Client Setup ==========
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!supabaseUrl || !supabaseServiceKey) {
-  throw new Error('Missing Supabase environment variables');
+  throw new Error('Missing Supabase environment variables. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
 }
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// User-Agent rotation to avoid simple blocks
+// ========== User-Agent Rotation (avoid blocking) ==========
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
 ];
-
-const parser = new Parser({
-  timeout: 15000,
-  headers: { 'User-Agent': USER_AGENTS[0] },
-});
-
-// Helper: get random user agent
 const getRandomUserAgent = () => USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 
-// Helper: fetch and parse RSS with retries
+// ========== RSS Parser with custom timeout and headers ==========
+const parser = new Parser({
+  timeout: 15000,
+  headers: { 'User-Agent': getRandomUserAgent() },
+});
+
+// ========== Helper: Fetch RSS with retries ==========
 async function fetchFeedWithRetry(url: string, maxRetries = 2): Promise<any> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -36,8 +37,8 @@ async function fetchFeedWithRetry(url: string, maxRetries = 2): Promise<any> {
       });
       return await parser.parseString(response.data);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      console.warn(`Attempt ${attempt} failed for ${url}:`, errorMessage);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.warn(`Attempt ${attempt}/${maxRetries} failed for ${url}: ${errorMsg}`);
       lastError = error;
       if (attempt < maxRetries) await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
     }
@@ -45,54 +46,90 @@ async function fetchFeedWithRetry(url: string, maxRetries = 2): Promise<any> {
   throw lastError;
 }
 
-// Helper: process a single feed and insert articles
-async function processFeed(sourceName: string, feedUrl: string): Promise<number> {
+// ========== Helper: Extract image from item or HTML ==========
+async function extractImageUrl(item: any, link: string): Promise<string> {
+  if (item.enclosure?.url) return item.enclosure.url;
+  if (item['media:content']?.['$']?.url) return item['media:content']['$'].url;
+  if (item.content) {
+    const imgMatch = item.content.match(/<img[^>]+src="([^">]+)"/);
+    if (imgMatch) return imgMatch[1];
+  }
+  if (link) {
+    try {
+      const response = await axios.get(link, { timeout: 5000, headers: { 'User-Agent': getRandomUserAgent() } });
+      const ogMatch = response.data.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/);
+      if (ogMatch) return ogMatch[1];
+    } catch (e) { /* ignore */ }
+  }
+  return '';
+}
+
+// ========== Helper: Process a single feed and insert articles ==========
+async function processFeed(sourceName: string, feedUrl: string, maxItems = 8): Promise<number> {
   let addedCount = 0;
   try {
-    console.log(`Processing feed for ${sourceName} from: ${feedUrl}`);
+    console.log(`🔍 Processing ${sourceName} from: ${feedUrl}`);
     const feed = await fetchFeedWithRetry(feedUrl);
-    for (const item of feed.items.slice(0, 5)) {
+    const items = feed.items?.slice(0, maxItems) || [];
+    if (items.length === 0) {
+      console.warn(`No items found in feed: ${feedUrl}`);
+      return 0;
+    }
+    for (const item of items) {
       if (!item.link) continue;
-      // Check duplicate
+
+      // Avoid duplicates
       const { data: existing } = await supabase.from('articles').select('url').eq('url', item.link);
-      if (existing?.length) continue;
+      if (existing && existing.length > 0) continue;
+
+      const imageUrl = await extractImageUrl(item, item.link);
+      const title = item.title?.trim() || 'No title';
+      const content = item.content || item.contentSnippet || '';
+      const summary = item.contentSnippet || content.slice(0, 300);
+      const publishedAt = item.isoDate ? new Date(item.isoDate).toISOString() : new Date().toISOString();
+      const now = new Date().toISOString();
+      const fingerprint = Buffer.from(`${item.link}${title}`).toString('base64');
 
       const article = {
-        title: item.title || 'No title',
-        content: item.content || item.contentSnippet || '',
-        summary: item.contentSnippet || item.content?.slice(0, 300) || '',
+        title,
+        content,
+        summary,
         url: item.link,
         source_name: sourceName,
         source_type: 'rss',
-        published_at: item.isoDate ? new Date(item.isoDate).toISOString() : new Date().toISOString(),
-        ingested_at: new Date().toISOString(),
-        first_seen_at: new Date().toISOString(),
-        last_updated_at: new Date().toISOString(),
-        fingerprint: Buffer.from(item.link + (item.title || '')).toString('base64'),
+        published_at: publishedAt,
+        ingested_at: now,
+        first_seen_at: now,
+        last_updated_at: now,
+        fingerprint,
         tag_ids: [],
-        image_url: '',
-        is_breaking: false,
+        image_url: imageUrl,
+        is_breaking: title.toLowerCase().includes('breaking') || title.toLowerCase().includes('urgent'),
         content_origin: 'live_rss',
         is_verified: false,
       };
+
       const { error } = await supabase.from('articles').insert(article);
-      if (error) throw error;
+      if (error) {
+        console.error(`Insert error for ${title}:`, error.message);
+        continue;
+      }
       addedCount++;
-      console.log(`✅ [${sourceName}] Added: ${article.title.substring(0, 60)}...`);
+      console.log(`✅ [${sourceName}] Added: ${title.substring(0, 70)}...`);
     }
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`Failed to process feed for ${sourceName}:`, errorMessage);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error(`❌ Failed to process ${sourceName} (${feedUrl}): ${errorMsg}`);
   }
   return addedCount;
 }
 
-// Main ingestion function – tries multiple feeds per category
+// ========== Main Ingestion Function ==========
 export async function runFullIngestion() {
-  console.log('📡 Starting multi-source news ingestion with fallbacks...');
+  console.log('📡 Starting full news ingestion with fallbacks...');
   let totalAdded = 0;
 
-  // Define feed groups (primary + fallbacks)
+  // Define feed groups – each group is tried in order until one works
   const feedGroups = [
     {
       name: 'Iran General News',
@@ -100,6 +137,7 @@ export async function runFullIngestion() {
         'https://news.google.com/rss/search?q=iran&hl=en-US&gl=US&ceid=US:en',
         'https://rss.nytimes.com/services/xml/rss/nyt/Iran.xml',
         'https://feeds.bbci.co.uk/news/world/middle_east/iran/rss.xml',
+        'https://www.aljazeera.com/xml/rss/iran.xml',
       ],
     },
     {
@@ -118,24 +156,84 @@ export async function runFullIngestion() {
         'https://www.timesofisrael.com/feed/',
       ],
     },
+    {
+      name: 'Al Jazeera',
+      feeds: [
+        'https://www.aljazeera.com/xml/rss/all.xml',
+        'https://www.aljazeera.com/xml/rss/news.xml',
+      ],
+    },
+    {
+      name: 'CNN',
+      feeds: [
+        'http://rss.cnn.com/rss/edition_world.rss',
+        'http://www.cnn.com/rss/cnn_topstories.rss',
+        'http://rss.cnn.com/rss/edition_meast.rss',
+      ],
+    },
+    {
+      name: 'Dawn (Pakistan)',
+      feeds: [
+        'https://www.dawn.com/feed/',
+        'https://www.dawn.com/feed/pakistan/',
+      ],
+    },
+    {
+      name: 'Geo News (Pakistan)',
+      feeds: [
+        'https://www.geo.tv/rss/1',
+      ],
+    },
+    {
+      name: 'The Express Tribune (Pakistan)',
+      feeds: [
+        'https://tribune.com.pk/feed/',
+      ],
+    },
+    {
+      name: 'Pakistan Today',
+      feeds: [
+        'https://www.pakistantoday.com.pk/feed/',
+      ],
+    },
+    {
+      name: 'The News International (Pakistan)',
+      feeds: [
+        'https://www.thenews.com.pk/feed',
+      ],
+    },
+    {
+      name: 'Middle East General',
+      feeds: [
+        'https://news.google.com/rss/search?q=middle+east&hl=en-US&gl=US&ceid=US:en',
+        'https://www.aljazeera.com/xml/rss/middle-east.xml',
+      ],
+    },
+    {
+      name: 'International – BBC',
+      feeds: [
+        'http://feeds.bbci.co.uk/news/world/rss.xml',
+        'https://feeds.bbci.co.uk/news/world/rss.xml',
+      ],
+    },
   ];
 
   for (const group of feedGroups) {
     let success = false;
     for (const feedUrl of group.feeds) {
       if (success) break;
-      const added = await processFeed(group.name, feedUrl);
+      const added = await processFeed(group.name, feedUrl, 6);
       if (added > 0) {
         totalAdded += added;
         success = true;
-        console.log(`✅ Successfully processed ${group.name} via ${feedUrl}`);
+        console.log(`✅ Successfully ingested from ${group.name} via ${feedUrl}`);
       } else {
-        console.log(`⚠️ No items from ${feedUrl} for ${group.name}, trying next fallback...`);
+        console.log(`⚠️ No items from ${feedUrl} for ${group.name}, trying fallback...`);
       }
     }
     if (!success) console.error(`❌ All feeds failed for group: ${group.name}`);
   }
 
-  console.log(`🏁 Ingestion finished. Total new articles: ${totalAdded}`);
+  console.log(`🏁 Ingestion completed. Total new articles added: ${totalAdded}`);
   return { totalAdded };
 }

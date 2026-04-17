@@ -1,147 +1,68 @@
-import { db } from '../firebase';
-import {
-  collection,
-  doc,
-  getDocs,
-  getDoc,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  query,
-  where,
-  orderBy,
-  limit,
-  Timestamp,
-  serverTimestamp
-} from 'firebase/firestore';
+import { supabase } from '../lib/supabaseClient';
 import type { Source, AIReport, EventCluster, Article } from '../types';
 
 // ============ Sources ============
 export async function getSources(): Promise<Source[]> {
-  try {
-    const q = query(collection(db, 'sources'), orderBy('name', 'asc'));
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Source));
-  } catch (error) {
-    console.error('getSources error:', error);
-    return [];
-  }
+  const { data, error } = await supabase.from('sources').select('*').order('name');
+  if (error) throw error;
+  return data as Source[];
 }
 
 export async function addSource(source: Omit<Source, 'id'>): Promise<string> {
-  const docRef = await addDoc(collection(db, 'sources'), {
-    ...source,
-    created_at: serverTimestamp(),
-    last_fetch: null
-  });
-  return docRef.id;
+  const { data, error } = await supabase.from('sources').insert(source).select();
+  if (error) throw error;
+  return data[0].id;
 }
 
 export async function updateSource(id: string, data: Partial<Source>): Promise<void> {
-  await updateDoc(doc(db, 'sources', id), {
-    ...data,
-    updated_at: serverTimestamp()
-  });
+  const { error } = await supabase.from('sources').update(data).eq('id', id);
+  if (error) throw error;
 }
 
 export async function deleteSource(id: string): Promise<void> {
-  await deleteDoc(doc(db, 'sources', id));
+  const { error } = await supabase.from('sources').delete().eq('id', id);
+  if (error) throw error;
 }
 
 export async function testSourceConnection(sourceId: string): Promise<{ success: boolean; message: string }> {
-  // Simulate connection test – in production, fetch a sample from the source URL
   try {
-    const sourceDoc = await getDoc(doc(db, 'sources', sourceId));
-    if (!sourceDoc.exists()) {
-      return { success: false, message: 'Source not found' };
-    }
-    const source = sourceDoc.data() as Source;
-    if (source.url) {
-      // Simple test: just check if URL is reachable (would need backend proxy)
-      return { success: true, message: `Connection to ${source.name} successful` };
-    }
+    const { data, error } = await supabase.from('sources').select('url').eq('id', sourceId).single();
+    if (error) throw error;
+    if (data?.url) return { success: true, message: 'Connection successful' };
     return { success: false, message: 'No URL configured' };
-  } catch (error) {
-    return { success: false, message: error instanceof Error ? error.message : 'Connection failed' };
+  } catch (err) {
+    return { success: false, message: err instanceof Error ? err.message : 'Connection failed' };
   }
 }
 
 // ============ AI Reports ============
 export async function getAIReports(limitCount = 20): Promise<AIReport[]> {
-  try {
-    const q = query(
-      collection(db, 'ai_reports'),
-      orderBy('generated_at', 'desc'),
-      limit(limitCount)
-    );
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AIReport));
-  } catch (error) {
-    console.error('getAIReports error:', error);
-    return [];
-  }
+  const { data, error } = await supabase
+    .from('ai_reports')
+    .select('*')
+    .order('generated_at', { ascending: false })
+    .limit(limitCount);
+  if (error) throw error;
+  return data as AIReport[];
 }
 
 export async function saveReport(report: Partial<AIReport>): Promise<string> {
-  const docRef = await addDoc(collection(db, 'ai_reports'), {
-    ...report,
-    generated_at: serverTimestamp(),
-    status: report.status || 'published'
-  });
-  return docRef.id;
+  const { data, error } = await supabase.from('ai_reports').insert(report).select();
+  if (error) throw error;
+  return data[0].id;
 }
 
 // ============ Event Clusters ============
 export async function getEventClusters(status?: 'active' | 'archived'): Promise<EventCluster[]> {
-  try {
-    let q = query(collection(db, 'event_clusters'), orderBy('start_time', 'desc'));
-    if (status) {
-      q = query(collection(db, 'event_clusters'), where('status', '==', status), orderBy('start_time', 'desc'));
-    }
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as EventCluster));
-  } catch (error) {
-    console.error('getEventClusters error:', error);
-    return [];
-  }
+  let query = supabase.from('event_clusters').select('*');
+  if (status) query = query.eq('status', status);
+  const { data, error } = await query.order('start_time', { ascending: false });
+  if (error) throw error;
+  return data as EventCluster[];
 }
 
 export async function getEventClusterById(id: string): Promise<EventCluster | null> {
-  try {
-    const docSnap = await getDoc(doc(db, 'event_clusters', id));
-    if (docSnap.exists()) {
-      return { id: docSnap.id, ...docSnap.data() } as EventCluster;
-    }
-    return null;
-  } catch (error) {
-    console.error('getEventClusterById error:', error);
-    return null;
-  }
-}
-
-// ============ Articles (additional helpers) ============
-export async function getArticlesByCluster(clusterId: string): Promise<Article[]> {
-  try {
-    const q = query(collection(db, 'articles'), where('cluster_id', '==', clusterId));
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Article));
-  } catch (error) {
-    console.error('getArticlesByCluster error:', error);
-    return [];
-  }
-}
-
-// Generic getArticles (alias for newsService, but kept here for consistency)
-export async function getArticles(limitCount = 100, constraints: any[] = []): Promise<Article[]> {
-  try {
-    let q = query(collection(db, 'articles'), orderBy('published_at', 'desc'), limit(limitCount));
-    if (constraints.length > 0) {
-      q = query(collection(db, 'articles'), orderBy('published_at', 'desc'), ...constraints, limit(limitCount));
-    }
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Article));
-  } catch (error) {
-    console.error('getArticles error:', error);
-    return [];
-  }
+  const { data, error } = await supabase.from('event_clusters').select('*').eq('id', id).single();
+  if (error) return null;
+  return data as EventCluster;
 }

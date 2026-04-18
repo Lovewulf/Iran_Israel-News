@@ -12,28 +12,6 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-// Custom icons for assets
-const assetIcons: Record<string, L.Icon> = {
-  tank: new L.Icon({ iconUrl: '/icons/tank.png', iconSize: [32, 32], popupAnchor: [0, -16] }),
-  aircraft: new L.Icon({ iconUrl: '/icons/aircraft.png', iconSize: [32, 32], popupAnchor: [0, -16] }),
-  warship: new L.Icon({ iconUrl: '/icons/warship.png', iconSize: [32, 32], popupAnchor: [0, -16] }),
-  missile: new L.Icon({ iconUrl: '/icons/missile.png', iconSize: [32, 32], popupAnchor: [0, -16] }),
-  drone: new L.Icon({ iconUrl: '/icons/drone.png', iconSize: [32, 32], popupAnchor: [0, -16] }),
-  default: new L.Icon({ iconUrl: '/icons/default.png', iconSize: [32, 32], popupAnchor: [0, -16] }),
-};
-
-// Fallback emoji-based markers if images not available
-const getAssetEmoji = (assetType: string) => {
-  switch(assetType) {
-    case 'tank': return '🚀';
-    case 'aircraft': return '✈️';
-    case 'warship': return '🚢';
-    case 'missile': return '🎯';
-    case 'drone': return '🛸';
-    default: return '📍';
-  }
-};
-
 interface MapArticle {
   id: string;
   title: string;
@@ -44,103 +22,100 @@ interface MapArticle {
   location_lat: number;
   location_lon: number;
   is_breaking: boolean;
-  asset_type?: string; // tank, aircraft, warship, missile, drone
-  analysis?: string; // short AI analysis
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  short_analysis?: string;
 }
 
-const getMarkerColor = (severity: string) => {
-  switch (severity) {
-    case 'critical': return 'red';
-    case 'high': return 'orange';
-    case 'medium': return 'yellow';
-    default: return 'blue';
+// Helper to get icon based on keywords
+function getCustomIcon(title: string, summary: string): L.DivIcon {
+  const text = (title + ' ' + summary).toLowerCase();
+  let iconHtml = '📍'; // default
+  let bgColor = '#3b82f6'; // blue default
+
+  if (text.includes('tank') || text.includes('armor') || text.includes('ground')) {
+    iconHtml = '🚜'; // tank emoji
+    bgColor = '#ef4444'; // red
+  } else if (text.includes('plane') || text.includes('jet') || text.includes('air strike') || text.includes('bomb')) {
+    iconHtml = '✈️';
+    bgColor = '#ef4444';
+  } else if (text.includes('ship') || text.includes('navy') || text.includes('vessel') || text.includes('carrier')) {
+    iconHtml = '🚢';
+    bgColor = '#3b82f6';
+  } else if (text.includes('missile') || text.includes('rocket') || text.includes('launch')) {
+    iconHtml = '🚀';
+    bgColor = '#ef4444';
+  } else if (text.includes('diplomatic') || text.includes('talk') || text.includes('meeting') || text.includes('negotiation')) {
+    iconHtml = '🤝';
+    bgColor = '#10b981'; // green
+  } else if (text.includes('attack') || text.includes('strike') || text.includes('kill')) {
+    iconHtml = '⚔️';
+    bgColor = '#ef4444';
   }
-};
+
+  return L.divIcon({
+    html: `<div style="background-color: ${bgColor}; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; border: 2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">${iconHtml}</div>`,
+    className: 'custom-div-icon',
+    iconSize: [32, 32],
+    popupAnchor: [0, -16],
+  });
+}
 
 const ConflictMap: React.FC = () => {
   const [articles, setArticles] = useState<MapArticle[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedType, setSelectedType] = useState<string>('all');
-  const [analysisLoading, setAnalysisLoading] = useState<Record<string, boolean>>({});
+  const [loadingAnalysis, setLoadingAnalysis] = useState<string | null>(null);
 
-  // Fetch articles and then fetch analyses for each location
-  const fetchMapData = async () => {
-    const { data, error } = await supabase
-      .from('articles')
-      .select('id, title, summary, source_name, published_at, url, location_lat, location_lon, is_breaking')
-      .not('location_lat', 'is', null)
-      .order('published_at', { ascending: false })
-      .limit(100);
-    if (error) console.error('Map fetch error:', error);
-    else {
-      // Detect asset type from title/summary
-      const withAssets = (data || []).map(article => {
-        const text = (article.title + ' ' + article.summary).toLowerCase();
-        let asset_type: MapArticle['asset_type'] = undefined;
-        if (text.includes('tank') || text.includes('armor') || text.includes('ground force')) asset_type = 'tank';
-        else if (text.includes('aircraft') || text.includes('fighter') || text.includes('jet') || text.includes('plane')) asset_type = 'aircraft';
-        else if (text.includes('warship') || text.includes('navy') || text.includes('vessel') || text.includes('destroyer')) asset_type = 'warship';
-        else if (text.includes('missile') || text.includes('rocket') || text.includes('ballistic')) asset_type = 'missile';
-        else if (text.includes('drone') || text.includes('uav')) asset_type = 'drone';
-        // severity based on keywords
-        let severity: 'critical' | 'high' | 'medium' | 'low' = 'low';
-        if (text.includes('attack') || text.includes('strike') || text.includes('kill')) severity = 'critical';
-        else if (text.includes('tension') || text.includes('threat') || text.includes('sanction')) severity = 'high';
-        else if (text.includes('diplomatic') || text.includes('talk')) severity = 'medium';
-        else severity = 'low';
-        return { ...article, asset_type, severity };
-      });
-      setArticles(withAssets);
-    }
-    setLoading(false);
-  };
+  useEffect(() => {
+    const fetchMapData = async () => {
+      const { data, error } = await supabase
+        .from('articles')
+        .select('id, title, summary, source_name, published_at, url, location_lat, location_lon, is_breaking, short_analysis')
+        .not('location_lat', 'is', null)
+        .order('published_at', { ascending: false })
+        .limit(200);
+      if (error) console.error('Map fetch error:', error);
+      else {
+        const withSeverity = (data || []).map(article => {
+          const text = (article.title + ' ' + (article.summary || '')).toLowerCase();
+          let severity: MapArticle['severity'] = 'low';
+          if (text.includes('attack') || text.includes('strike') || text.includes('missile') || text.includes('kill')) severity = 'critical';
+          else if (text.includes('tension') || text.includes('threat') || text.includes('sanction')) severity = 'high';
+          else if (text.includes('diplomatic') || text.includes('talk') || text.includes('meeting')) severity = 'medium';
+          else severity = 'low';
+          return { ...article, severity, short_analysis: article.short_analysis || undefined };
+        });
+        setArticles(withSeverity);
+      }
+      setLoading(false);
+    };
+    fetchMapData();
+    const interval = setInterval(fetchMapData, 600000); // refresh every 10 minutes
+    return () => clearInterval(interval);
+  }, []);
 
-  // Fetch AI analysis for a specific location (group of articles near that lat/lon)
-  const fetchAnalysis = async (lat: number, lon: number, title: string) => {
-    const key = `${lat},${lon}`;
-    if (analysisLoading[key]) return;
-    setAnalysisLoading(prev => ({ ...prev, [key]: true }));
+  const handleGenerateAnalysis = async (articleId: string, title: string, summary: string) => {
+    setLoadingAnalysis(articleId);
     try {
-      const response = await fetch('/api/location-analysis', {
+      const response = await fetch('/api/analyze-article', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lat, lon, title }),
+        body: JSON.stringify({ articleId, title, summary }),
       });
       const data = await response.json();
       if (data.analysis) {
-        setArticles(prev => prev.map(a => {
-          if (Math.abs(a.location_lat - lat) < 0.1 && Math.abs(a.location_lon - lon) < 0.1) {
-            return { ...a, analysis: data.analysis };
-          }
-          return a;
-        }));
+        // Update local state to show analysis immediately
+        setArticles(prev => prev.map(a => a.id === articleId ? { ...a, short_analysis: data.analysis } : a));
+      } else {
+        alert('Failed to generate analysis.');
       }
     } catch (err) {
-      console.error('Analysis fetch failed', err);
+      console.error(err);
+      alert('Error generating analysis.');
     } finally {
-      setAnalysisLoading(prev => ({ ...prev, [key]: false }));
+      setLoadingAnalysis(null);
     }
   };
-
-  useEffect(() => {
-    fetchMapData();
-    const interval = setInterval(fetchMapData, 60000); // refresh articles every minute
-    const analysisInterval = setInterval(() => {
-      // For each unique location, fetch analysis every 10 minutes
-      const uniqueLocs = new Map();
-      articles.forEach(a => {
-        const key = `${a.location_lat},${a.location_lon}`;
-        if (!uniqueLocs.has(key)) uniqueLocs.set(key, a);
-      });
-      uniqueLocs.forEach((article, key) => {
-        fetchAnalysis(article.location_lat, article.location_lon, article.title);
-      });
-    }, 10 * 60 * 1000); // 10 minutes
-    return () => {
-      clearInterval(interval);
-      clearInterval(analysisInterval);
-    };
-  }, [articles]);
 
   const center: [number, number] = [32.0, 53.0];
   const filteredArticles = selectedType === 'all' ? articles : articles.filter(a => a.severity === selectedType);
@@ -164,42 +139,40 @@ const ConflictMap: React.FC = () => {
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          {filteredArticles.map((article) => {
-            const icon = article.asset_type && assetIcons[article.asset_type] ? assetIcons[article.asset_type] : undefined;
-            const emoji = article.asset_type ? getAssetEmoji(article.asset_type) : '📍';
-            const color = getMarkerColor(article.severity);
-            return (
-              <Marker
-                key={article.id}
-                position={[article.location_lat, article.location_lon]}
-                icon={icon}
-              >
-                <Tooltip sticky>{article.title.substring(0, 60)}</Tooltip>
-                <Popup>
-                  <div className="max-w-xs">
-                    <h3 className="font-bold text-sm mb-1 flex items-center gap-1">{emoji} {article.title}</h3>
-                    <p className="text-xs text-gray-600 mb-2">{article.summary?.substring(0, 120)}...</p>
-                    <div className="flex justify-between text-xs">
-                      <span className="text-gray-500">{article.source_name}</span>
-                      <a href={article.url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Read</a>
-                    </div>
-                    <div className="text-xs text-gray-400 mt-1">{new Date(article.published_at).toLocaleString()}</div>
-                    {article.analysis && (
-                      <div className="mt-2 p-2 bg-gray-100 rounded text-xs">
-                        <strong>AI Analysis:</strong> {article.analysis}
-                      </div>
-                    )}
-                    {analysisLoading[`${article.location_lat},${article.location_lon}`] && (
-                      <div className="mt-2 text-xs text-gray-400">Loading analysis...</div>
-                    )}
+          {filteredArticles.map((article) => (
+            <Marker
+              key={article.id}
+              position={[article.location_lat, article.location_lon]}
+              icon={getCustomIcon(article.title, article.summary || '')}
+            >
+              <Tooltip sticky>{article.title.substring(0, 60)}</Tooltip>
+              <Popup>
+                <div className="max-w-xs">
+                  <h3 className="font-bold text-sm mb-1">{article.title}</h3>
+                  <p className="text-xs text-gray-600 mb-2">{article.summary?.substring(0, 120)}...</p>
+                  {article.short_analysis ? (
+                    <p className="text-xs text-indigo-600 bg-indigo-50 p-1 rounded mt-1">🔍 {article.short_analysis}</p>
+                  ) : (
+                    <button
+                      onClick={() => handleGenerateAnalysis(article.id, article.title, article.summary || '')}
+                      disabled={loadingAnalysis === article.id}
+                      className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-200 transition disabled:opacity-50"
+                    >
+                      {loadingAnalysis === article.id ? 'Generating...' : '🤖 Analyze with AI'}
+                    </button>
+                  )}
+                  <div className="flex justify-between text-xs mt-2">
+                    <span className="text-gray-500">{article.source_name}</span>
+                    <a href={article.url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Read</a>
                   </div>
-                </Popup>
-              </Marker>
-            );
-          })}
+                  <div className="text-xs text-gray-400 mt-1">{new Date(article.published_at).toLocaleString()}</div>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
         </MapContainer>
       </div>
-      <p className="text-xs text-gray-400 text-center">Icons: 🚀 Tank/armor, ✈️ Aircraft, 🚢 Warship, 🎯 Missile, 🛸 Drone. Colors: 🔴 Critical, 🟠 High, 🟡 Medium, 🔵 Low</p>
+      <p className="text-xs text-gray-400 text-center">Icons: 🚜 Tank, ✈️ Air, 🚢 Naval, 🚀 Missile, 🤝 Diplomatic, ⚔️ Attack. Click marker for AI tactical analysis.</p>
     </div>
   );
 };

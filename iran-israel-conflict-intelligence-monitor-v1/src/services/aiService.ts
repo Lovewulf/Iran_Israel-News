@@ -1,6 +1,5 @@
 import type { Article, AIReport } from '../types';
 
-// Helper to compute fallback impact score based on keyword analysis
 function computeFallbackScore(content: string): number {
   const keywords = {
     high: ['escalation', 'crisis', 'war', 'attack', 'strike', 'killed', 'missile', 'threat', 'emergency', 'collapse', 'violence', 'casualties'],
@@ -22,11 +21,11 @@ function computeFallbackScore(content: string): number {
 
 export async function generateSituationReport(
   articles: Article[],
-  type: 'daily' | 'flash' | 'strategic'
+  type: 'daily' | 'flash' | 'strategic',
+  options?: { provider?: 'openai' | 'openrouter'; model?: string }
 ): Promise<Partial<AIReport>> {
   if (!articles.length) throw new Error('No articles provided');
 
-  // Sort by date (newest first) and take top 50
   const sorted = [...articles].sort((a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime());
   const latestArticles = sorted.slice(0, 50);
   const context = latestArticles.map(a => 
@@ -36,14 +35,12 @@ export async function generateSituationReport(
   let prompt = '';
   let reportTitle = '';
 
-  // Base instruction for bilingual output (Urdu, not Persian)
   const bilingualInstruction = `
 IMPORTANT: After completing the English report, produce an EXACT Urdu translation of the entire report. Use **Pakistani Urdu** (اردو) as written in Pakistan. Do NOT use Persian (Farsi). Use the Urdu alphabet (اردو رسم الخط). 
 Start the Urdu section with "**اردو ترجمہ**" on a new line, then write the complete report in Urdu. 
 Use simple, clear Urdu vocabulary suitable for intelligence analysis. Example words: "خطرہ" (risk), "صورت حال" (situation), "دفاعی" (defensive), "سفارتی" (diplomatic), "فوجی" (military).
 Do not add extra commentary. The Urdu translation must be complete and faithful to the English original.`;
 
-  // Common instruction for all report types
   const commonInstructions = `
 Use **Markdown tables** where appropriate (e.g., for casualty figures, risk scores, comparison of scenarios). Ensure tables are properly formatted with headers and alignment.
 Provide detailed logical analysis: explain causal chains, note contradictions between sources, weight evidence by source reliability, and offer probabilistic forecasts.
@@ -83,7 +80,7 @@ ${bilingualInstruction}
 ${context}`;
       break;
 
-    default: // daily
+    default:
       reportTitle = 'Daily Intelligence Brief';
       prompt = `You are an intelligence analyst. Based ONLY on the following 50 articles, produce a COMPREHENSIVE DAILY BRIEF (max 800 words) for military and diplomatic staff. Structure as:
 
@@ -101,21 +98,22 @@ ${context}`;
   }
 
   try {
+    const provider = options?.provider || 'openai';
+    const modelName = options?.model || (provider === 'openai' ? 'gpt-3.5-turbo' : undefined);
+
     const response = await fetch('/api/generate-report', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify({ prompt, provider, modelName }),
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     let content = data.content || '';
 
-    // Extract impact score from the English part (before Urdu)
     let impactScore = 5;
     const scoreMatch = content.match(/IMPACT SCORE:\s*(\d+)\/10/i);
     if (scoreMatch) {
       impactScore = Math.min(10, Math.max(1, parseInt(scoreMatch[1]) || 5));
-      // Remove the score line from displayed content (keep for UI)
       content = content.replace(/IMPACT SCORE:\s*\d+\/10\s*/i, '').trim();
     } else {
       impactScore = computeFallbackScore(content);

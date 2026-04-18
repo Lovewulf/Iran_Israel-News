@@ -27,7 +27,7 @@ const parser = new Parser({
   headers: { 'User-Agent': getRandomUserAgent() },
 });
 
-// ========== Geocoding function using imported map ==========
+// ========== Geocoding ==========
 function geocodeArticle(title: string, summary: string): { lat: number | null; lon: number | null } {
   const text = (title + ' ' + summary).toLowerCase();
   for (const [place, data] of Object.entries(LOCATION_MAP)) {
@@ -63,7 +63,7 @@ async function fetchFeedWithRetry(url: string, maxRetries = 2): Promise<any> {
   throw lastError;
 }
 
-// ========== Helper: Extract image URL (enhanced) ==========
+// ========== Extract image URL ==========
 async function extractImageUrl(item: any, link: string): Promise<string> {
   if (item.enclosure?.url) return item.enclosure.url;
   if (item['media:content']?.['$']?.url) return item['media:content']['$'].url;
@@ -97,7 +97,7 @@ async function extractImageUrl(item: any, link: string): Promise<string> {
   return '';
 }
 
-// ========== Helper: Check if article is on or after March 1, 2026 ==========
+// ========== Date filter ==========
 function isOnOrAfterMinDate(pubDate: string | Date | undefined): boolean {
   if (!pubDate) return false;
   try {
@@ -109,8 +109,8 @@ function isOnOrAfterMinDate(pubDate: string | Date | undefined): boolean {
   }
 }
 
-// ========== Process a single feed ==========
-async function processFeed(sourceName: string, feedUrl: string, maxItems = 10): Promise<number> {
+// ========== Process a single feed (max 15 items) ==========
+async function processFeed(sourceName: string, feedUrl: string, maxItems = 15): Promise<number> {
   let addedCount = 0;
   try {
     console.log(`🔍 Processing ${sourceName} from: ${feedUrl}`);
@@ -129,6 +129,7 @@ async function processFeed(sourceName: string, feedUrl: string, maxItems = 10): 
         continue;
       }
 
+      // Duplicate check
       const { data: existing } = await supabase.from('articles').select('url').eq('url', item.link);
       if (existing && existing.length > 0) continue;
 
@@ -140,7 +141,6 @@ async function processFeed(sourceName: string, feedUrl: string, maxItems = 10): 
       const now = new Date().toISOString();
       const fingerprint = Buffer.from(`${item.link}${title}`).toString('base64');
 
-      // Geocode location
       const { lat: location_lat, lon: location_lon } = geocodeArticle(title, summary);
 
       const article = {
@@ -179,7 +179,7 @@ async function processFeed(sourceName: string, feedUrl: string, maxItems = 10): 
   return addedCount;
 }
 
-// ========== Main Ingestion Function ==========
+// ========== Main ingestion (faster: more items, extra feeds) ==========
 export async function runFullIngestion() {
   console.log(`📡 Starting news ingestion (only articles from ${MIN_DATE.toISOString()} onwards)`);
   let totalAdded = 0;
@@ -226,13 +226,28 @@ export async function runFullIngestion() {
       'http://feeds.bbci.co.uk/news/world/rss.xml',
       'https://feeds.bbci.co.uk/news/world/rss.xml',
     ]},
+    // Extra sources for more news volume
+    { name: 'Reuters World', feeds: [
+      'https://www.reuters.com/world/feed/',
+      'https://www.reuters.com/world/middle-east/feed/',
+    ]},
+    { name: 'AP Top News', feeds: [
+      'https://apnews.com/hub/world-news?format=rss',
+      'https://apnews.com/hub/middle-east?format=rss',
+    ]},
+    { name: 'France 24 Middle East', feeds: [
+      'https://www.france24.com/en/middle-east/rss',
+    ]},
+    { name: 'Deutsche Welle Middle East', feeds: [
+      'https://rss.dw.com/rdf/xml-en-mideast',
+    ]},
   ];
 
   for (const group of feedGroups) {
     let success = false;
     for (const feedUrl of group.feeds) {
       if (success) break;
-      const added = await processFeed(group.name, feedUrl, 8);
+      const added = await processFeed(group.name, feedUrl, 15); // 15 items per source
       if (added > 0) {
         totalAdded += added;
         success = true;

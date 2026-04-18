@@ -26,6 +26,44 @@ const parser = new Parser({
   headers: { 'User-Agent': getRandomUserAgent() },
 });
 
+// ========== Location Dictionary for Geocoding (free, no API key) ==========
+const LOCATION_MAP: Record<string, { lat: number; lon: number }> = {
+  'Tehran': { lat: 35.6892, lon: 51.3890 },
+  'Tel Aviv': { lat: 32.0853, lon: 34.7818 },
+  'Jerusalem': { lat: 31.7683, lon: 35.2137 },
+  'Haifa': { lat: 32.7940, lon: 34.9896 },
+  'Qom': { lat: 34.6399, lon: 50.8759 },
+  'Isfahan': { lat: 32.6546, lon: 51.6680 },
+  'Shiraz': { lat: 29.5918, lon: 52.5837 },
+  'Mashhad': { lat: 36.2972, lon: 59.6057 },
+  'Dimona': { lat: 31.0708, lon: 35.0337 },
+  'Beirut': { lat: 33.8938, lon: 35.5018 },
+  'Damascus': { lat: 33.5138, lon: 36.2765 },
+  'Baghdad': { lat: 33.3152, lon: 44.3661 },
+  'Ramallah': { lat: 31.9074, lon: 35.2042 },
+  'Gaza': { lat: 31.5017, lon: 34.4668 },
+  'Dubai': { lat: 25.2048, lon: 55.2708 },
+  'Ankara': { lat: 39.9334, lon: 32.8597 },
+  'Cairo': { lat: 30.0444, lon: 31.2357 },
+  'Riyadh': { lat: 24.7136, lon: 46.6753 },
+  'Sanaa': { lat: 15.3694, lon: 44.1910 },
+  'Kuwait City': { lat: 29.3759, lon: 47.9774 },
+  'Muscat': { lat: 23.5880, lon: 58.3829 },
+  'Doha': { lat: 25.2854, lon: 51.5310 },
+  'Manama': { lat: 26.2285, lon: 50.5865 },
+  'Amman': { lat: 31.9454, lon: 35.9284 },
+};
+
+function geocodeArticle(title: string, summary: string): { lat: number | null; lon: number | null } {
+  const text = (title + ' ' + summary).toLowerCase();
+  for (const [place, coords] of Object.entries(LOCATION_MAP)) {
+    if (text.includes(place.toLowerCase())) {
+      return { lat: coords.lat, lon: coords.lon };
+    }
+  }
+  return { lat: null, lon: null };
+}
+
 // ========== Helper: Fetch with retries ==========
 async function fetchFeedWithRetry(url: string, maxRetries = 2): Promise<any> {
   let lastError: unknown;
@@ -48,33 +86,25 @@ async function fetchFeedWithRetry(url: string, maxRetries = 2): Promise<any> {
 
 // ========== Helper: Extract image URL (enhanced) ==========
 async function extractImageUrl(item: any, link: string): Promise<string> {
-  // 1. RSS enclosure
   if (item.enclosure?.url) return item.enclosure.url;
-  // 2. media:content (common in many RSS feeds)
   if (item['media:content']?.['$']?.url) return item['media:content']['$'].url;
   if (item['media:thumbnail']?.['$']?.url) return item['media:thumbnail']['$'].url;
-  // 3. content:encoded (sometimes contains img tag)
   if (item['content:encoded']) {
     const imgMatch = item['content:encoded'].match(/<img[^>]+src="([^">]+)"/);
     if (imgMatch) return imgMatch[1];
   }
-  // 4. description or content snippet
   if (item.content) {
     const imgMatch = item.content.match(/<img[^>]+src="([^">]+)"/);
     if (imgMatch) return imgMatch[1];
   }
-  // 5. Fetch the article page and extract Open Graph or Twitter Card image
   if (link) {
     try {
       const response = await axios.get(link, { timeout: 8000, headers: { 'User-Agent': getRandomUserAgent() } });
       const html = response.data;
-      // og:image
       let ogMatch = html.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/);
       if (ogMatch) return ogMatch[1];
-      // twitter:image
       let twitterMatch = html.match(/<meta[^>]+name="twitter:image"[^>]+content="([^"]+)"/);
       if (twitterMatch) return twitterMatch[1];
-      // json-ld (simplified)
       const jsonLdMatch = html.match(/<script type="application\/ld\+json">(.*?)<\/script>/s);
       if (jsonLdMatch) {
         try {
@@ -85,7 +115,6 @@ async function extractImageUrl(item: any, link: string): Promise<string> {
       }
     } catch (e) { /* ignore */ }
   }
-  // 6. No image found
   return '';
 }
 
@@ -132,6 +161,9 @@ async function processFeed(sourceName: string, feedUrl: string, maxItems = 10): 
       const now = new Date().toISOString();
       const fingerprint = Buffer.from(`${item.link}${title}`).toString('base64');
 
+      // Geocode location based on title and summary
+      const { lat: location_lat, lon: location_lon } = geocodeArticle(title, summary);
+
       const article = {
         title,
         content,
@@ -149,6 +181,8 @@ async function processFeed(sourceName: string, feedUrl: string, maxItems = 10): 
         is_breaking: title.toLowerCase().includes('breaking') || title.toLowerCase().includes('urgent'),
         content_origin: 'live_rss',
         is_verified: false,
+        location_lat,
+        location_lon,
       };
 
       const { error } = await supabase.from('articles').insert(article);

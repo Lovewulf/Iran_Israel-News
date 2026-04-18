@@ -5,6 +5,7 @@ import { getAIReports, getArticles, saveReport, deleteAllReports } from '../serv
 import { generateSituationReport } from '../services/aiService';
 import { motion } from 'framer-motion';
 import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm'; // <-- ADD THIS: enables tables, strikethrough, task lists
 
 const formatDate = (dateValue: any) => {
   if (!dateValue) return 'Unknown date';
@@ -76,8 +77,10 @@ const ReportCard = ({ report, idx }: { report: AIReport; idx: number }) => {
       <div className="p-5">
         {content ? (
           <>
-            <div className="prose prose-sm max-w-none prose-headings:text-gray-900 prose-headings:font-bold prose-p:text-gray-700 prose-strong:text-gray-900 prose-ul:text-gray-700 prose-li:text-gray-700">
-              <Markdown>{displayContent}</Markdown>
+            <div className="prose prose-sm max-w-none prose-headings:text-gray-900 prose-headings:font-bold prose-p:text-gray-700 prose-strong:text-gray-900 prose-ul:text-gray-700 prose-li:text-gray-700 prose-table:border prose-table:border-gray-300 prose-th:border prose-th:border-gray-300 prose-th:bg-gray-100 prose-th:p-2 prose-td:border prose-td:border-gray-300 prose-td:p-2">
+              <Markdown remarkPlugins={[remarkGfm]}>
+                {displayContent}
+              </Markdown>
             </div>
             {content.length > 500 && (
               <button

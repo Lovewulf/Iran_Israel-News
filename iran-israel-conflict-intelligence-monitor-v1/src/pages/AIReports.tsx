@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Sparkles, Activity, ChevronRight, Calendar, ShieldCheck, RefreshCw, Zap, TrendingUp, ShieldAlert, Trash2 } from 'lucide-react';
+import { FileText, Sparkles, Activity, ChevronRight, Calendar, ShieldCheck, RefreshCw, Zap, TrendingUp, ShieldAlert, Trash2, Settings } from 'lucide-react';
 import { AIReport, Article } from '../types';
 import { getAIReports, getArticles, saveReport, deleteAllReports } from '../services/firestoreService';
 import { generateSituationReport } from '../services/aiService';
@@ -102,6 +102,9 @@ export default function AIReports() {
   const [generating, setGenerating] = useState(false);
   const [generatingType, setGeneratingType] = useState<'daily' | 'flash' | 'strategic' | null>(null);
   const [newAvailable, setNewAvailable] = useState({ daily: false, flash: false, strategic: false });
+  const [showSettings, setShowSettings] = useState(false);
+  const [selectedProvider, setSelectedProvider] = useState<'openai' | 'openrouter'>('openai');
+  const [selectedModel, setSelectedModel] = useState('gpt-3.5-turbo');
 
   const fetchReports = async () => {
     try {
@@ -118,17 +121,14 @@ export default function AIReports() {
   const checkNewArticlesSinceLastReport = async (existingReports: AIReport[]) => {
     const allArticles = await getArticles(100);
     if (!allArticles.length) return;
-
     const getLastReportDate = (type: string) => {
       const last = existingReports.find(r => r.type === type);
       return last ? new Date(last.generated_at) : null;
     };
-
     const hasNewArticles = (lastDate: Date | null) => {
       if (!lastDate) return allArticles.length > 0;
       return allArticles.some(a => new Date(a.published_at) > lastDate);
     };
-
     setNewAvailable({
       daily: hasNewArticles(getLastReportDate('daily')),
       flash: hasNewArticles(getLastReportDate('flash')),
@@ -140,17 +140,19 @@ export default function AIReports() {
     fetchReports();
   }, []);
 
-  // ✅ Generation allowed anytime – no duplicate blocking
   const handleGenerate = async (type: AIReport['type']) => {
     setGenerating(true);
     setGeneratingType(type);
     try {
-      const articles = await getArticles(30);
+      const articles = await getArticles(50);
       if (articles.length === 0) {
         alert("No articles found. Ingest some data first.");
         return;
       }
-      const newReport = await generateSituationReport(articles, type);
+      const newReport = await generateSituationReport(articles, type, {
+        provider: selectedProvider,
+        model: selectedProvider === 'openai' ? selectedModel : undefined,
+      });
       await saveReport(newReport);
       await fetchReports();
     } catch (error) {
@@ -195,16 +197,56 @@ export default function AIReports() {
             AI Intelligence Reports
           </h1>
           <p className="text-gray-500 mt-1">
-            Automated strategic reports synthesized by Groq AI based on recent articles.
+            Automated strategic reports with bilingual (English + Urdu) output.
           </p>
         </div>
-        <button
-          onClick={handleClearAll}
-          className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-red-700 transition"
-        >
-          <Trash2 className="w-4 h-4" /> Clear All Reports
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setShowSettings(!showSettings)}
+            className="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-gray-300 transition"
+          >
+            <Settings className="w-4 h-4" /> Model
+          </button>
+          <button
+            onClick={handleClearAll}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-red-700 transition"
+          >
+            <Trash2 className="w-4 h-4" /> Clear All
+          </button>
+        </div>
       </div>
+
+      {showSettings && (
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-6 flex flex-wrap gap-4 items-end">
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Provider</label>
+            <select
+              value={selectedProvider}
+              onChange={(e) => setSelectedProvider(e.target.value as any)}
+              className="px-3 py-2 border border-gray-300 rounded-lg bg-white"
+            >
+              <option value="openai">OpenAI (GPT-3.5/4)</option>
+              <option value="openrouter">OpenRouter (Free)</option>
+            </select>
+          </div>
+          {selectedProvider === 'openai' && (
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Model</label>
+              <select
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg bg-white"
+              >
+                <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Fast, cheap)</option>
+                <option value="gpt-4">GPT-4 (More accurate, slower)</option>
+              </select>
+            </div>
+          )}
+          <div className="text-xs text-gray-500">
+            {selectedProvider === 'openai' ? 'Uses your OpenAI API key' : 'Uses free OpenRouter models (rate-limited)'}
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-3 mb-8 flex-wrap">
         <button

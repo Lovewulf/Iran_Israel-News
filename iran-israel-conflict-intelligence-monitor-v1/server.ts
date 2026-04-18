@@ -50,7 +50,7 @@ app.post('/api/generate-report', async (req, res) => {
           { role: 'user', content: prompt },
         ],
         temperature: 0.5,
-        max_tokens: 2500,
+        max_tokens: 4000,
       });
       const text = completion.choices[0]?.message?.content || '';
       return res.json({ content: text });
@@ -86,7 +86,7 @@ app.post('/api/generate-report', async (req, res) => {
             model,
             messages: [{ role: 'user', content: prompt }],
             temperature: 0.5,
-            max_tokens: 2500,
+            max_tokens: 4000,
           }),
         });
         if (response.ok) {

@@ -25,23 +25,20 @@ function getErrorMessage(error: unknown): string {
   }
 }
 
-// ========== Health check ==========
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// ========== OpenRouter / OpenAI AI report generation ==========
+// OpenAI / OpenRouter report generation endpoint
 app.post('/api/generate-report', async (req, res) => {
   const { prompt, provider = 'openai', modelName } = req.body;
   if (!prompt) {
     return res.status(400).json({ error: 'Prompt is required' });
   }
 
-  // --- OpenAI Provider ---
   if (provider === 'openai') {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      console.error('❌ OPENAI_API_KEY not set');
       return res.status(500).json({ error: 'OpenAI API key not configured.' });
     }
     const openai = new OpenAI({ apiKey });
@@ -49,23 +46,20 @@ app.post('/api/generate-report', async (req, res) => {
       const completion = await openai.chat.completions.create({
         model: modelName || 'gpt-3.5-turbo',
         messages: [
-          { role: 'system', content: 'You are an expert geopolitical intelligence analyst. Provide concise, factual, and structured reports based on the news provided.' },
+          { role: 'system', content: 'You are an expert geopolitical intelligence analyst.' },
           { role: 'user', content: prompt },
         ],
         temperature: 0.5,
         max_tokens: 2500,
       });
       const text = completion.choices[0]?.message?.content || '';
-      if (!text) throw new Error('Empty response from OpenAI');
-      console.log('✅ Report generated via OpenAI');
       return res.json({ content: text });
     } catch (error) {
-      console.error('❌ OpenAI error:', error);
+      console.error('OpenAI error:', error);
       return res.status(500).json({ error: getErrorMessage(error) });
     }
   }
 
-  // --- OpenRouter Provider (free fallback) ---
   if (provider === 'openrouter') {
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
@@ -98,37 +92,29 @@ app.post('/api/generate-report', async (req, res) => {
         if (response.ok) {
           const data = await response.json();
           const text = data.choices?.[0]?.message?.content || '';
-          if (text) {
-            console.log(`✅ Report generated via OpenRouter (${model})`);
-            return res.json({ content: text });
-          }
+          if (text) return res.json({ content: text });
         }
-      } catch (err) {
-        console.warn(`OpenRouter model ${model} failed:`, getErrorMessage(err));
-      }
+      } catch (err) { /* ignore */ }
     }
-    return res.status(503).json({ error: 'All OpenRouter models failed. Please try again later.' });
+    return res.status(503).json({ error: 'All OpenRouter models failed.' });
   }
 
-  return res.status(400).json({ error: 'Invalid provider. Use "openai" or "openrouter".' });
+  return res.status(400).json({ error: 'Invalid provider.' });
 });
 
-// ========== Generate short tactical analysis for a single article (map popup) ==========
+// Short tactical analysis for map markers
 app.post('/api/analyze-article', async (req, res) => {
   const { articleId, title, summary } = req.body;
   if (!articleId || !title) {
     return res.status(400).json({ error: 'Missing articleId or title' });
   }
 
-  // Use OpenAI (preferred) or fallback to OpenRouter
   const openaiKey = process.env.OPENAI_API_KEY;
   const openrouterKey = process.env.OPENROUTER_API_KEY;
-
   if (!openaiKey && !openrouterKey) {
-    return res.status(500).json({ error: 'No AI API key configured (OpenAI or OpenRouter).' });
+    return res.status(500).json({ error: 'No AI API key configured.' });
   }
 
-  // Supabase client for caching
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !supabaseServiceKey) {
@@ -136,7 +122,6 @@ app.post('/api/analyze-article', async (req, res) => {
   }
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-  // Check if already cached
   const { data: existing } = await supabase
     .from('articles')
     .select('short_analysis')
@@ -151,7 +136,6 @@ app.post('/api/analyze-article', async (req, res) => {
 
   let analysis = '';
 
-  // Try OpenAI first
   if (openaiKey) {
     try {
       const openai = new OpenAI({ apiKey: openaiKey });
@@ -167,7 +151,6 @@ app.post('/api/analyze-article', async (req, res) => {
     }
   }
 
-  // Fallback to OpenRouter if needed
   if (!analysis && openrouterKey) {
     try {
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -194,17 +177,13 @@ app.post('/api/analyze-article', async (req, res) => {
     }
   }
 
-  if (!analysis) {
-    analysis = 'No tactical analysis available.';
-  }
+  if (!analysis) analysis = 'No tactical analysis available.';
 
-  // Cache in database
   await supabase.from('articles').update({ short_analysis: analysis }).eq('id', articleId);
-
   res.json({ analysis });
 });
 
-// ========== Manual ingestion endpoint ==========
+// Manual ingestion endpoint
 app.post('/api/ingest', async (req, res) => {
   try {
     console.log('🔄 Manual ingestion triggered');
@@ -216,15 +195,15 @@ app.post('/api/ingest', async (req, res) => {
   }
 });
 
-// ========== Serve static frontend files ==========
+// Serve static frontend
 app.use(express.static(__dirname));
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// ========== Scheduled ingestion every 15 minutes ==========
+// Scheduled ingestion every 5 minutes (faster updates)
 (async () => {
-  console.log('🚀 Initial ingestion...');
+  console.log('🚀 Initial ingestion on server start...');
   try {
     const result = await runFullIngestion();
     console.log(`✅ Added ${result.totalAdded} articles.`);
@@ -232,12 +211,12 @@ app.get('*', (req, res) => {
 })();
 
 setInterval(async () => {
-  console.log('⏰ Scheduled ingestion...');
+  console.log('⏰ Scheduled ingestion (5 min interval) running...');
   try {
     const result = await runFullIngestion();
-    console.log(`✅ Added ${result.totalAdded} articles.`);
+    console.log(`✅ Added ${result.totalAdded} new articles.`);
   } catch (err) { console.error('❌ Scheduled ingestion failed:', getErrorMessage(err)); }
-}, 15 * 60 * 1000);
+}, 5 * 60 * 1000); // 5 minutes
 
 app.listen(port, () => {
   console.log(`✅ Server running on port ${port}`);

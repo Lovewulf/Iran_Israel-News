@@ -112,7 +112,6 @@ const LOCATION_MAP: Record<string, { lat: number; lon: number; aliases: string[]
   'Amol': { lat: 36.4697, lon: 52.3508, aliases: ['amol'] },
   'Babol': { lat: 36.5513, lon: 52.6789, aliases: ['babol'] },
   'Qaem Shahr': { lat: 36.4639, lon: 52.8606, aliases: ['qaem shahr'] },
-  'Sari': { lat: 36.5633, lon: 53.0601, aliases: ['sari'] },
   'Juybar': { lat: 36.6411, lon: 52.9125, aliases: ['juybar'] },
   'Mahmudabad': { lat: 36.6319, lon: 52.2625, aliases: ['mahmudabad'] },
   'Nur': { lat: 36.5717, lon: 52.0153, aliases: ['nur'] },
@@ -124,7 +123,7 @@ const LOCATION_MAP: Record<string, { lat: number; lon: number; aliases: string[]
   'Lahijan': { lat: 37.1972, lon: 50.0039, aliases: ['lahijan'] },
   'Langarud': { lat: 37.1969, lon: 50.1536, aliases: ['langarud'] },
   'Rudsar': { lat: 37.1378, lon: 50.2881, aliases: ['rudsar'] },
-  'Sowme'eh Sara': { lat: 37.3119, lon: 49.3219, aliases: ['sowmeh'] },
+  'Sowmeh Sara': { lat: 37.3119, lon: 49.3219, aliases: ['sowmeh'] },
   'Masal': { lat: 37.3622, lon: 49.1306, aliases: ['masal'] },
   'Fuman': { lat: 37.2242, lon: 49.3125, aliases: ['fuman'] },
   'Shaft': { lat: 37.1703, lon: 49.4000, aliases: ['shaft'] },
@@ -237,7 +236,6 @@ const LOCATION_MAP: Record<string, { lat: number; lon: number; aliases: string[]
   'Kiryat Shmona': { lat: 33.2078, lon: 35.5697, aliases: ['kiryat shmona'] },
   'Karmiel': { lat: 32.9141, lon: 35.2935, aliases: ['karmiel'] },
   'Maalot-Tarshiha': { lat: 33.0167, lon: 35.2667, aliases: ['maalot'] },
-  'Nahariya': { lat: 33.0058, lon: 35.0989, aliases: ['nahariya'] },
   'Kiryat Yam': { lat: 32.8497, lon: 35.0697, aliases: ['kiryat yam'] },
   'Kiryat Motzkin': { lat: 32.8383, lon: 35.0775, aliases: ['motzkin'] },
   'Kiryat Bialik': { lat: 32.8325, lon: 35.0875, aliases: ['bialik'] },
@@ -668,7 +666,7 @@ const LOCATION_MAP: Record<string, { lat: number; lon: number; aliases: string[]
   'European Union': { lat: 50.0000, lon: 10.0000, aliases: ['eu', 'european union'] },
   'United Nations': { lat: 40.0000, lon: -74.0000, aliases: ['un', 'united nations'] },
   'NATO': { lat: 50.0000, lon: 4.0000, aliases: ['nato'] },
-  'Gulf Cooperation Council': { lat: 24.0000, lon: 45.0000, aliases: ['gcc'] },
+  'Gulf Cooperation Council': { lat: 24.0000, lon: 45.0000, aliases: ['gcc'] }
 };
 
 function geocodeArticle(title: string, summary: string): { lat: number | null; lon: number | null } {

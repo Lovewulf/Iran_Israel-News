@@ -3,6 +3,7 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { runFullIngestion } from './src/services/ingestionService.js';
+import OpenAI from 'openai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,39 +29,54 @@ app.get('/api/health', (req, res) => {
 });
 
 app.post('/api/generate-report', async (req, res) => {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    console.error('❌ OPENROUTER_API_KEY not set');
-    return res.status(500).json({ error: 'OpenRouter API key not configured.' });
+  const { prompt, provider = 'openai', modelName } = req.body;
+  if (!prompt) {
+    return res.status(400).json({ error: 'Prompt is required' });
   }
 
-  try {
-    let { prompt } = req.body;
-    if (!prompt) {
-      return res.status(400).json({ error: 'Prompt is required' });
+  // --- OpenAI Provider ---
+  if (provider === 'openai') {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      console.error('❌ OPENAI_API_KEY not set');
+      return res.status(500).json({ error: 'OpenAI API key not configured.' });
     }
-
-    // Truncate prompt to 4000 chars
-    if (prompt.length > 4000) {
-      prompt = prompt.substring(0, 4000);
+    const openai = new OpenAI({ apiKey });
+    try {
+      const completion = await openai.chat.completions.create({
+        model: modelName || 'gpt-3.5-turbo',
+        messages: [
+          { role: 'system', content: 'You are an expert geopolitical intelligence analyst. Provide concise, factual, and structured reports based on the news provided.' },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.5,
+        max_tokens: 2500,
+      });
+      const text = completion.choices[0]?.message?.content || '';
+      if (!text) throw new Error('Empty response from OpenAI');
+      console.log('✅ Report generated via OpenAI');
+      return res.json({ content: text });
+    } catch (error) {
+      console.error('❌ OpenAI error:', error);
+      return res.status(500).json({ error: getErrorMessage(error) });
     }
+  }
 
-    // Current working free models (as of April 2026)
-    const modelsToTry = [
+  // --- OpenRouter Provider (free fallback) ---
+  if (provider === 'openrouter') {
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'OpenRouter API key not configured.' });
+    }
+    const modelsToTry = modelName ? [modelName] : [
       'meta-llama/llama-3.2-3b-instruct:free',
       'microsoft/phi-3-mini-128k-instruct:free',
       'qwen/qwen-2.5-7b-instruct:free',
       'google/gemma-2-9b-it:free',
       'openrouter/free',
     ];
-
-    let lastError: unknown = null;
     for (const model of modelsToTry) {
       try {
-        console.log(`🤖 Trying model: ${model}...`);
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s timeout
-
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -70,53 +86,33 @@ app.post('/api/generate-report', async (req, res) => {
             'X-Title': 'Iran-Israel Conflict Monitor',
           },
           body: JSON.stringify({
-            model: model,
-            messages: [
-              { role: 'system', content: 'You are an expert geopolitical intelligence analyst. Provide concise, factual, and structured reports based on the news provided.' },
-              { role: 'user', content: prompt },
-            ],
+            model,
+            messages: [{ role: 'user', content: prompt }],
             temperature: 0.5,
-            max_tokens: 2500, // Increased for bilingual output
+            max_tokens: 2500,
           }),
-          signal: controller.signal,
         });
-        clearTimeout(timeoutId);
-
         if (response.ok) {
           const data = await response.json();
           const text = data.choices?.[0]?.message?.content || '';
-          if (text && text.length > 50) {
-            console.log(`✅ Report generated using model: ${model}`);
+          if (text) {
+            console.log(`✅ Report generated via OpenRouter (${model})`);
             return res.json({ content: text });
-          } else {
-            throw new Error('Empty or too short response');
           }
-        } else {
-          const errorText = await response.text();
-          console.warn(`⚠️ Model ${model} failed (${response.status}): ${errorText.substring(0, 200)}`);
-          lastError = new Error(`HTTP ${response.status}`);
         }
       } catch (err) {
-        console.warn(`⚠️ Model ${model} error:`, getErrorMessage(err));
-        lastError = err;
+        console.warn(`OpenRouter model ${model} failed:`, getErrorMessage(err));
       }
     }
-
-    // If all models fail, return a fallback response (not a 500) so the frontend can show a message
-    console.error('❌ All AI models failed');
-    return res.status(503).json({
-      error: 'AI service temporarily unavailable. Please try again later.',
-      fallback: true,
-    });
-  } catch (error) {
-    console.error('❌ Unexpected error:', error);
-    return res.status(500).json({ error: getErrorMessage(error) });
+    return res.status(503).json({ error: 'All OpenRouter models failed. Please try again later.' });
   }
+
+  return res.status(400).json({ error: 'Invalid provider. Use "openai" or "openrouter".' });
 });
 
 app.post('/api/ingest', async (req, res) => {
   try {
-    console.log('🔄 Manual ingestion');
+    console.log('🔄 Manual ingestion triggered');
     const result = await runFullIngestion();
     res.json({ success: true, totalAdded: result.totalAdded });
   } catch (error) {
@@ -125,13 +121,13 @@ app.post('/api/ingest', async (req, res) => {
   }
 });
 
-// Serve static frontend
+// Serve static frontend files
 app.use(express.static(__dirname));
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Scheduled ingestion
+// Scheduled ingestion every 15 minutes
 (async () => {
   console.log('🚀 Initial ingestion...');
   try {

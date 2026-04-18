@@ -77,7 +77,14 @@ const ReportCard = ({ report, idx }: { report: AIReport; idx: number }) => {
       <div className="p-5">
         {content ? (
           <>
-            <div className="prose prose-sm max-w-none prose-headings:text-gray-900 prose-headings:font-bold prose-p:text-gray-700 prose-strong:text-gray-900 prose-ul:text-gray-700 prose-li:text-gray-700 prose-table:border prose-table:border-gray-300 prose-th:border prose-th:border-gray-300 prose-th:bg-gray-100 prose-th:p-2 prose-td:border prose-td:border-gray-300 prose-td:p-2">
+            <div className="prose prose-sm max-w-none 
+              prose-headings:text-gray-900 prose-headings:font-bold 
+              prose-p:text-gray-700 prose-strong:text-gray-900 
+              prose-ul:text-gray-700 prose-li:text-gray-700
+              prose-table:min-w-full prose-table:border-collapse 
+              prose-th:border prose-th:border-gray-300 prose-th:bg-gray-100 prose-th:p-3 prose-th:text-left prose-th:font-semibold
+              prose-td:border prose-td:border-gray-300 prose-td:p-3 prose-td:text-gray-700
+              prose-tr:even:bg-gray-50 prose-tr:hover:bg-gray-100">
               <Markdown remarkPlugins={[remarkGfm]}>
                 {displayContent}
               </Markdown>

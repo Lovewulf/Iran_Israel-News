@@ -216,7 +216,7 @@ setInterval(async () => {
     const result = await runFullIngestion();
     console.log(`✅ Added ${result.totalAdded} new articles.`);
   } catch (err) { console.error('❌ Scheduled ingestion failed:', getErrorMessage(err)); }
-}, 5 * 60 * 1000); // 5 minutes
+ }, 2 * 60 * 1000); // 2 minutes
 
 app.listen(port, () => {
   console.log(`✅ Server running on port ${port}`);

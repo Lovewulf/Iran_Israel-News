@@ -211,7 +211,7 @@ app.get('*', (req, res) => {
 })();
 
 setInterval(async () => {
-  console.log('⏰ Scheduled ingestion (5 min interval) running...');
+  console.log('⏰ Scheduled ingestion (2 min interval) running...');
   try {
     const result = await runFullIngestion();
     console.log(`✅ Added ${result.totalAdded} new articles.`);

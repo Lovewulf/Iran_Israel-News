@@ -5,7 +5,7 @@ import { getAIReports, getArticles, saveReport, deleteAllReports } from '../serv
 import { generateSituationReport } from '../services/aiService';
 import { motion } from 'framer-motion';
 import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm'; // <-- ADD THIS: enables tables, strikethrough, task lists
+import remarkGfm from 'remark-gfm';
 
 const formatDate = (dateValue: any) => {
   if (!dateValue) return 'Unknown date';

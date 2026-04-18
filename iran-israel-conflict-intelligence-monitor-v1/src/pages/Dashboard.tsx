@@ -4,6 +4,7 @@ import type { Article } from '../types';
 import { Link } from 'react-router-dom';
 import { Calendar, ExternalLink, Zap } from 'lucide-react';
 import BreakingNewsTicker from '../components/BreakingNewsTicker';
+import ConflictMap from '../components/ConflictMap';
 
 const formatDate = (dateValue: any) => {
   if (!dateValue) return 'Recently';
@@ -95,6 +96,15 @@ export default function Dashboard() {
 
       {/* Breaking News Ticker */}
       <BreakingNewsTicker />
+
+      {/* Live Conflict Map */}
+      <div className="my-8">
+        <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+          🗺️ Live Conflict Map
+          <span className="text-sm font-normal text-gray-500">Real-time developments</span>
+        </h2>
+        <ConflictMap />
+      </div>
 
       {/* Hero Section */}
       {heroArticle && (

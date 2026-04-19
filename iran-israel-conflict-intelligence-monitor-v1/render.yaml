@@ -14,3 +14,14 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
+
+  # NEW: RSS‑Bridge service for X/Twitter feeds
+  - type: web
+    name: rss-bridge
+    runtime: image
+    image:
+      url: rssbridge/rss-bridge:latest
+    plan: free
+    envVars:
+      - key: PORT
+        value: 80

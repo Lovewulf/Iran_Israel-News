@@ -148,7 +148,7 @@ async function processFeed(sourceName: string, feedUrl: string, maxItems = 15): 
         summary,
         url: item.link,
         source_name: sourceName,
-        source_type: 'rss',  // X/Twitter feeds will also be 'rss' (they are RSS feeds)
+        source_type: 'rss',
         published_at: publishedAt,
         ingested_at: now,
         first_seen_at: now,
@@ -178,13 +178,16 @@ async function processFeed(sourceName: string, feedUrl: string, maxItems = 15): 
   return addedCount;
 }
 
-// ========== Main Ingestion Function (all feed groups) ==========
+// ========== Main Ingestion Function ==========
 export async function runFullIngestion() {
   console.log(`📡 Starting news ingestion (only articles from ${MIN_DATE.toISOString()} onwards)`);
   let totalAdded = 0;
 
+  // Base URL for RSS-Bridge (Twitter feeds)
+  const BRIDGE = 'https://rss-bridge-latest-s4gr.onrender.com';
+
   const feedGroups = [
-    // Original news sources
+    // ---------- Traditional News Sources ----------
     { name: 'Iran General News', feeds: [
       'https://news.google.com/rss/search?q=iran&hl=en-US&gl=US&ceid=US:en',
       'https://rss.nytimes.com/services/xml/rss/nyt/Iran.xml',
@@ -241,9 +244,7 @@ export async function runFullIngestion() {
       'https://rss.dw.com/rdf/xml-en-mideast',
     ]},
 
-    // ========== X (Twitter) feeds via RSS-Bridge ==========
-    // Base URL for RSS-Bridge (replace with your actual instance URL if different)
-    const BRIDGE = 'https://rss-bridge-latest-s4gr.onrender.com';
+    // ---------- X (Twitter) Feeds via RSS-Bridge ----------
     { name: 'X - Iranian Leaders', feeds: [
       `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=Khamenei_fa&duration=1&format=Atom`,
       `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=iripresident&duration=1&format=Atom`,

@@ -1,3 +1,5 @@
+// @ts-ignore
+import { YoutubeTranscript } from 'youtube-transcript-api';
 import { createClient } from '@supabase/supabase-js';
 import Parser from 'rss-parser';
 import { YoutubeTranscript } from 'youtube-transcript-api';

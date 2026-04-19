@@ -3,6 +3,7 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { runFullIngestion } from './src/services/ingestionService.js';
+import { runYouTubeIngestion } from './src/services/youtubeService.js';
 import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
 
@@ -50,7 +51,7 @@ app.post('/api/generate-report', async (req, res) => {
           { role: 'user', content: prompt },
         ],
         temperature: 0.5,
-        max_tokens: 4000,
+        max_tokens: 4000, // Longer reports for OpenAI
       });
       const text = completion.choices[0]?.message?.content || '';
       return res.json({ content: text });
@@ -86,7 +87,7 @@ app.post('/api/generate-report', async (req, res) => {
             model,
             messages: [{ role: 'user', content: prompt }],
             temperature: 0.5,
-            max_tokens: 4000,
+            max_tokens: 2500, // Keep lower for free models to avoid context overflow
           }),
         });
         if (response.ok) {
@@ -183,14 +184,26 @@ app.post('/api/analyze-article', async (req, res) => {
   res.json({ analysis });
 });
 
-// Manual ingestion endpoint
+// Manual RSS ingestion endpoint
 app.post('/api/ingest', async (req, res) => {
   try {
-    console.log('🔄 Manual ingestion triggered');
+    console.log('🔄 Manual RSS ingestion triggered');
     const result = await runFullIngestion();
     res.json({ success: true, totalAdded: result.totalAdded });
   } catch (error) {
-    console.error('❌ Ingestion failed:', error);
+    console.error('❌ RSS ingestion failed:', error);
+    res.status(500).json({ success: false, error: getErrorMessage(error) });
+  }
+});
+
+// Manual YouTube ingestion endpoint
+app.post('/api/ingest-youtube', async (req, res) => {
+  try {
+    console.log('🔄 Manual YouTube ingestion triggered');
+    const result = await runYouTubeIngestion();
+    res.json({ success: true, totalAdded: result.totalAdded });
+  } catch (error) {
+    console.error('❌ YouTube ingestion failed:', error);
     res.status(500).json({ success: false, error: getErrorMessage(error) });
   }
 });
@@ -201,27 +214,38 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Scheduled ingestion every 5 minutes (faster updates)
+// ========== Scheduled ingestion (RSS + YouTube) ==========
+// Initial run on server start
 (async () => {
-  console.log('🚀 Initial ingestion on server start...');
+  console.log('🚀 Initial ingestion (RSS + YouTube) on server start...');
   try {
-    const result = await runFullIngestion();
-    console.log(`✅ Added ${result.totalAdded} articles.`);
-  } catch (err) { console.error('❌ Initial ingestion failed:', getErrorMessage(err)); }
+    const rssResult = await runFullIngestion();
+    console.log(`✅ RSS added ${rssResult.totalAdded} articles.`);
+  } catch (err) { console.error('❌ RSS initial ingestion failed:', getErrorMessage(err)); }
+  try {
+    const youtubeResult = await runYouTubeIngestion();
+    console.log(`✅ YouTube added ${youtubeResult.totalAdded} articles.`);
+  } catch (err) { console.error('❌ YouTube initial ingestion failed:', getErrorMessage(err)); }
 })();
 
+// Schedule both every 2 minutes
 setInterval(async () => {
   console.log('⏰ Scheduled ingestion (2 min interval) running...');
   try {
-    const result = await runFullIngestion();
-    console.log(`✅ Added ${result.totalAdded} new articles.`);
-  } catch (err) { console.error('❌ Scheduled ingestion failed:', getErrorMessage(err)); }
- }, 2 * 60 * 1000); // 2 minutes
+    const rssResult = await runFullIngestion();
+    console.log(`✅ RSS added ${rssResult.totalAdded} new articles.`);
+  } catch (err) { console.error('❌ RSS scheduled ingestion failed:', getErrorMessage(err)); }
+  try {
+    const youtubeResult = await runYouTubeIngestion();
+    console.log(`✅ YouTube added ${youtubeResult.totalAdded} new articles.`);
+  } catch (err) { console.error('❌ YouTube scheduled ingestion failed:', getErrorMessage(err)); }
+}, 2 * 60 * 1000); // 2 minutes
 
 app.listen(port, () => {
   console.log(`✅ Server running on port ${port}`);
   console.log(`📍 Health: http://localhost:${port}/api/health`);
   console.log(`📍 AI reports: POST http://localhost:${port}/api/generate-report`);
   console.log(`📍 Map analysis: POST http://localhost:${port}/api/analyze-article`);
-  console.log(`📍 Ingestion: POST http://localhost:${port}/api/ingest`);
+  console.log(`📍 RSS ingestion: POST http://localhost:${port}/api/ingest`);
+  console.log(`📍 YouTube ingestion: POST http://localhost:${port}/api/ingest-youtube`);
 });

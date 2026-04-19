@@ -1,7 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import Parser from 'rss-parser';
-// @ts-ignore – youtube-transcript-api has no TypeScript declarations
-import { YoutubeTranscript } from 'youtube-transcript-api';
+import getVideoCaptions from 'youtube-captions-api';
 import { LOCATION_MAP } from '../locations.js';
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -58,13 +57,14 @@ function geocodeArticle(title: string, summary: string): { lat: number | null; l
   return { lat: null, lon: null };
 }
 
-// Fetch transcript for a video ID
+// Fetch transcript using youtube-captions-api
 async function fetchTranscript(videoId: string): Promise<string | null> {
   try {
-    const transcript = await YoutubeTranscript.fetchTranscript(videoId);
-    if (!transcript || transcript.length === 0) return null;
-    // Combine all text segments
-    return transcript.map((t: any) => t.text).join(' ').substring(0, 5000);
+    const captions = await getVideoCaptions(videoId, { lang: 'en', plainText: true });
+    if (typeof captions === 'string' && captions.length > 0) {
+      return captions.substring(0, 5000); // limit length
+    }
+    return null;
   } catch (error) {
     console.warn(`No transcript available for video ${videoId}:`, error);
     return null;

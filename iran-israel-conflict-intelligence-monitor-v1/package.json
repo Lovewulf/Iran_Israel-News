@@ -40,7 +40,9 @@
     "rss-parser": "^3.13.0",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.5.0",
-    "vite": "^6.2.0"
+    "vite": "^6.2.0",
+    "xml2js": "^0.6.2",
+    "youtube-transcript-api": "^1.0.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

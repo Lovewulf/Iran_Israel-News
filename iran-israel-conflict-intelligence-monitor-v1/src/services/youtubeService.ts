@@ -1,7 +1,6 @@
-// @ts-ignore
-import { YoutubeTranscript } from 'youtube-transcript-api';
 import { createClient } from '@supabase/supabase-js';
 import Parser from 'rss-parser';
+// @ts-ignore – youtube-transcript-api has no TypeScript declarations
 import { YoutubeTranscript } from 'youtube-transcript-api';
 import { LOCATION_MAP } from '../locations.js';
 
@@ -19,9 +18,9 @@ const parser = new Parser({
   },
 });
 
-// List of YouTube channels to monitor
-// Format: { name: 'Channel Name', channelId: 'UC...' }
+// List of YouTube channels to monitor (International + Pakistani)
 const CHANNELS = [
+  // International
   { name: 'Al Jazeera English', channelId: 'UCQtnw7MP6wXsj7-JC0P7Y0A' },
   { name: 'BBC News', channelId: 'UC16niRr50-MSBwiO3YDb3RA' },
   { name: 'CNN', channelId: 'UCupvZG-5ko_eiXAupbDfxWw' },
@@ -31,6 +30,16 @@ const CHANNELS = [
   { name: 'CGTN (China)', channelId: 'UCX4RZP3z0DyCwJb6vQXq8lQ' },
   { name: 'i24NEWS English', channelId: 'UCAN7MlJJt_EcTHlNEF2y6Cg' },
   { name: 'TRT World', channelId: 'UC0w2M6jRlPZwOMZzHzn2ZLQ' },
+  // Pakistani
+  { name: 'Geo News', channelId: 'UCeP6UIrjQr9H4Jv8x-aM3hw' },
+  { name: 'Dawn News', channelId: 'UC0NhdK8hq2kfUZcU4nEe-Sg' },
+  { name: 'Express News', channelId: 'UCm2cWX6OHj64tZfLXQfWl_Q' },
+  { name: 'ARY News', channelId: 'UCqEP71JXoxFYsvMhQvQwVXQ' },
+  { name: 'Samaa TV', channelId: 'UC60R7cBZzWCyUzIh-Z5k_pA' },
+  { name: 'GNN', channelId: 'UCjXMn-rYxOVdjjZ-3VU0GkA' },
+  { name: '92 News', channelId: 'UCqR8U4F5RjYjL6fqVwQwTgA' },
+  { name: 'Hum News', channelId: 'UCW6E7lwJXqYcU3V4KpX0VpA' },
+  { name: 'Bol News', channelId: 'UCZ1q8cJcZvVvY0g9w7Vk2VQ' },
 ];
 
 // Geocoding (reuse from ingestionService)
@@ -55,7 +64,7 @@ async function fetchTranscript(videoId: string): Promise<string | null> {
     const transcript = await YoutubeTranscript.fetchTranscript(videoId);
     if (!transcript || transcript.length === 0) return null;
     // Combine all text segments
-    return transcript.map(t => t.text).join(' ').substring(0, 5000); // limit length
+    return transcript.map((t: any) => t.text).join(' ').substring(0, 5000);
   } catch (error) {
     console.warn(`No transcript available for video ${videoId}:`, error);
     return null;
@@ -72,7 +81,16 @@ async function processYouTubeChannel(channelName: string, channelId: string, max
     const feed = await parser.parseURL(feedUrl);
     const items = feed.items?.slice(0, maxVideos) || [];
     for (const item of items) {
-      const videoId = item.id?.split(':').pop(); // extract video ID from <yt:videoId> or id field
+      // Extract video ID from the <yt:videoId> element or from the link
+      let videoId: string | undefined;
+      if (item.id && typeof item.id === 'string') {
+        const match = item.id.match(/(?:yt:video:)?([a-zA-Z0-9_-]{11})/);
+        if (match) videoId = match[1];
+      }
+      if (!videoId && item.link) {
+        const match = item.link.match(/(?:v=|\/)([a-zA-Z0-9_-]{11})(?:[?&]|$)/);
+        if (match) videoId = match[1];
+      }
       if (!videoId) continue;
 
       // Check if we already have this video (by URL)
@@ -87,7 +105,7 @@ async function processYouTubeChannel(channelName: string, channelId: string, max
       const publishedAt = item.isoDate ? new Date(item.isoDate).toISOString() : new Date().toISOString();
       const now = new Date().toISOString();
       const fingerprint = Buffer.from(`${item.link}${title}`).toString('base64');
-      const summary = transcript.substring(0, 300); // first 300 chars as summary
+      const summary = transcript.substring(0, 300);
 
       const { lat: location_lat, lon: location_lon } = geocodeArticle(title, transcript);
 
@@ -104,7 +122,7 @@ async function processYouTubeChannel(channelName: string, channelId: string, max
         last_updated_at: now,
         fingerprint,
         tag_ids: [],
-        image_url: item.enclosure?.url || '', // thumbnail if available
+        image_url: item.enclosure?.url || '',
         is_breaking: false,
         content_origin: 'youtube',
         is_verified: false,

@@ -63,7 +63,7 @@ async function fetchFeedWithRetry(url: string, maxRetries = 2): Promise<any> {
   throw lastError;
 }
 
-// ========== Extract image URL ==========
+// ========== Helper: Extract image URL ==========
 async function extractImageUrl(item: any, link: string): Promise<string> {
   if (item.enclosure?.url) return item.enclosure.url;
   if (item['media:content']?.['$']?.url) return item['media:content']['$'].url;
@@ -97,7 +97,7 @@ async function extractImageUrl(item: any, link: string): Promise<string> {
   return '';
 }
 
-// ========== Date filter ==========
+// ========== Helper: Check date ==========
 function isOnOrAfterMinDate(pubDate: string | Date | undefined): boolean {
   if (!pubDate) return false;
   try {
@@ -109,7 +109,7 @@ function isOnOrAfterMinDate(pubDate: string | Date | undefined): boolean {
   }
 }
 
-// ========== Process a single feed (max 15 items) ==========
+// ========== Process a single feed ==========
 async function processFeed(sourceName: string, feedUrl: string, maxItems = 15): Promise<number> {
   let addedCount = 0;
   try {
@@ -129,7 +129,6 @@ async function processFeed(sourceName: string, feedUrl: string, maxItems = 15): 
         continue;
       }
 
-      // Duplicate check
       const { data: existing } = await supabase.from('articles').select('url').eq('url', item.link);
       if (existing && existing.length > 0) continue;
 
@@ -149,7 +148,7 @@ async function processFeed(sourceName: string, feedUrl: string, maxItems = 15): 
         summary,
         url: item.link,
         source_name: sourceName,
-        source_type: 'rss',
+        source_type: 'rss',  // X/Twitter feeds will also be 'rss' (they are RSS feeds)
         published_at: publishedAt,
         ingested_at: now,
         first_seen_at: now,
@@ -179,12 +178,13 @@ async function processFeed(sourceName: string, feedUrl: string, maxItems = 15): 
   return addedCount;
 }
 
-// ========== Main ingestion (faster: more items, extra feeds) ==========
+// ========== Main Ingestion Function (all feed groups) ==========
 export async function runFullIngestion() {
   console.log(`📡 Starting news ingestion (only articles from ${MIN_DATE.toISOString()} onwards)`);
   let totalAdded = 0;
 
   const feedGroups = [
+    // Original news sources
     { name: 'Iran General News', feeds: [
       'https://news.google.com/rss/search?q=iran&hl=en-US&gl=US&ceid=US:en',
       'https://rss.nytimes.com/services/xml/rss/nyt/Iran.xml',
@@ -226,7 +226,6 @@ export async function runFullIngestion() {
       'http://feeds.bbci.co.uk/news/world/rss.xml',
       'https://feeds.bbci.co.uk/news/world/rss.xml',
     ]},
-    // Extra sources for more news volume
     { name: 'Reuters World', feeds: [
       'https://www.reuters.com/world/feed/',
       'https://www.reuters.com/world/middle-east/feed/',
@@ -241,13 +240,63 @@ export async function runFullIngestion() {
     { name: 'Deutsche Welle Middle East', feeds: [
       'https://rss.dw.com/rdf/xml-en-mideast',
     ]},
+
+    // ========== X (Twitter) feeds via RSS-Bridge ==========
+    // Base URL for RSS-Bridge (replace with your actual instance URL if different)
+    const BRIDGE = 'https://rss-bridge-latest-s4gr.onrender.com';
+    { name: 'X - Iranian Leaders', feeds: [
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=Khamenei_fa&duration=1&format=Atom`,
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=iripresident&duration=1&format=Atom`,
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=kalibaf&duration=1&format=Atom`,
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=iraqchi&duration=1&format=Atom`,
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=zarif&duration=1&format=Atom`,
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=IRGC_IRI&duration=1&format=Atom`,
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=HeshmatAlavi&duration=1&format=Atom`,
+    ]},
+    { name: 'X - Israeli Leaders', feeds: [
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=netanyahu&duration=1&format=Atom`,
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=Israel_Defense&duration=1&format=Atom`,
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=IsraelMFA&duration=1&format=Atom`,
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=Isaac_Herzog&duration=1&format=Atom`,
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=IDFSpokesperson&duration=1&format=Atom`,
+    ]},
+    { name: 'X - US Officials', feeds: [
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=realDonaldTrump&duration=1&format=Atom`,
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=JoeBiden&duration=1&format=Atom`,
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=SecBlinken&duration=1&format=Atom`,
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=DeptofDefense&duration=1&format=Atom`,
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=POTUS&duration=1&format=Atom`,
+    ]},
+    { name: 'X - Russian & Chinese Leaders', feeds: [
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=PutinRF&duration=1&format=Atom`,
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=RussianEmbassy&duration=1&format=Atom`,
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=MFA_Russia&duration=1&format=Atom`,
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=SpoxChina&duration=1&format=Atom`,
+    ]},
+    { name: 'X - Indian & Pakistani Leaders', feeds: [
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=modiofficial&duration=1&format=Atom`,
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=CMShehbaz&duration=1&format=Atom`,
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=PakPMO&duration=1&format=Atom`,
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=ForeignOfficePk&duration=1&format=Atom`,
+    ]},
+    { name: 'X - Saudi & Gulf Leaders', feeds: [
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=KingSalman&duration=1&format=Atom`,
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=MohammedBinSalman&duration=1&format=Atom`,
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+username&u=UAEmbassyUS&duration=1&format=Atom`,
+    ]},
+    { name: 'X - Key Hashtags / Search Terms', feeds: [
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+search&q=Iran+Israel+conflict&duration=1&format=Atom`,
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+search&q=Strait+of+Hormuz&duration=1&format=Atom`,
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+search&q=Iran+nuclear&duration=1&format=Atom`,
+      `${BRIDGE}/?action=display&bridge=Twitter&context=By+search&q=Jerusalem+attack&duration=1&format=Atom`,
+    ]},
   ];
 
   for (const group of feedGroups) {
     let success = false;
     for (const feedUrl of group.feeds) {
       if (success) break;
-      const added = await processFeed(group.name, feedUrl, 15); // 15 items per source
+      const added = await processFeed(group.name, feedUrl, 15);
       if (added > 0) {
         totalAdded += added;
         success = true;
